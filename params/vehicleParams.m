@@ -26,10 +26,11 @@ p.propMassAtSeparation = 8000;  % [kg] propellant remaining for
                                   %      boostback + coast + landing.
                                   %      Sized for the boostback: from
                                   %      this separation state the burn
-                                  %      needs ~1.85 km/s impulsive dv
-                                  %      (more with gravity losses), so
-                                  %      the original 3000 kg (1.55 km/s
-                                  %      total) made it infeasible.
+                                  %      needs ~1.6 km/s impulsive dv
+                                  %      (more with gravity losses; ~6.1 t
+                                  %      for RTLS), so the original
+                                  %      3000 kg (1.55 km/s total) is
+                                  %      infeasible.
 % p.m0 (mass at separation): see deriveParams()
 
 % --- Separation state (illustrative) ---
@@ -81,7 +82,7 @@ p.landingPropReserve = 800;   % [kg] propellant the boostback must leave
                                 %      for a landing from near-terminal
                                 %      velocity, i.e. assumes Phase 4
                                 %      drag. In vacuum the coast reaches
-                                %      ignition altitude at ~1.6 km/s.
+                                %      ignition altitude at ~1.8 km/s.
 
 p = deriveParams(p);
 end

@@ -36,7 +36,7 @@ Two parallel implementations of the same Phase 1 physics exist, deliberately:
   and let the two drift apart).
 
 Both fly the **real convex boostback guidance** (Phase 2, done) and then
-coast to landing-burn ignition altitude, arriving within ~0.5 m of the
+coast to landing-burn ignition altitude, arriving within ~1 m of the
 aimed-for point. The landing burn (`guidance/pdg_landing_guidance.m`) is
 still a **placeholder** fixed profile, so touchdown is hard. **Phase 3
 (convex landing guidance) is the next task** — but read the "vacuum
@@ -98,7 +98,7 @@ The design below was implemented as agreed in `guidance/boostback_guidance.m`
   nondimensionalized to km / g units. Fixed-structure on purpose, with the
   later shrinking-horizon replanning / code generation in mind.
 - **Burn duration** is not in the convex problem: outer 1D search (25-point geometric
-  grid + `fminbnd`), one SOCP per evaluation (~2 s total).
+  grid + `fminbnd`), one SOCP per evaluation (~2–3 s total).
 - **Pointing constraint**: boostback uses its own `p.boostbackMaxDeviation`
   (default 90°, a half-space) about n = direction of the impulsive Δv into
   the coast arc. `p.maxTiltAngle` (20°) is the landing burn's, about
@@ -108,9 +108,11 @@ The design below was implemented as agreed in `guidance/boostback_guidance.m`
   its limit is attitude *rate*, not a cone). Don't tighten it back without
   a reason.
 - **Landing site** is free: `p.target.x` (x = 0 is the launch site / RTLS;
-  large x = droneship). Verified −20…400 km, all via the T_coast estimate.
-  Near the natural impact point (~300 km) the burn shrinks to a ~1 s trim
-  (min-throttle impulse is the floor).
+  large x = droneship). Verified −20…400 km, all via the T_coast estimate:
+  at the 30° nominal, 6.3 t (−20 km) → 6.1 t (RTLS) → 4.8 t (100 km) →
+  2.9 t (200 km) → 0.5 t (400 km). The natural (no-burn) impact point is
+  ~365 km; close to it the burn shrinks to a short trim (min-throttle
+  impulse is the floor).
 - **Thrust bounds per burn**: `p.nEnginesBoostback` → `p.T_min/T_max_boostback`
   (guidance uses these); `p.T_min/T_max` remain the landing burn's.
 - **T_coast fallback**: if the estimated T_coast is infeasible, a scan over
@@ -133,11 +135,19 @@ The design below was implemented as agreed in `guidance/boostback_guidance.m`
   cutoff-state map (2 equations) would remove it. `coneprog`'s default
   tolerance leaves ~0.2 m on the affine constraint; tightening
   `ConstraintTolerance` to 1e-9 makes it stall (all solves "infeasible").
+- **Nominal numbers** (committed params: 30° FPA separation at 1649 m/s,
+  RTLS): impulsive Δv estimate 1.62 km/s; burn 85.5 s using 6.1 t, leaving
+  1.1 t above the landing reserve; T_coast 256 s; apogee 159 km; arrives
+  at the ignition point at 1.79 km/s (vacuum) with a ~1.2 m replay miss.
+  History: the original nominal was 1600/400 m/s (14°) — 97 s, 6.9 t, only
+  259 kg margin, sitting next to the infeasible corner the speed × FPA
+  Monte Carlo found (FPA < ~18° and high speed), hence the move to 30°.
 - **Params changed**: the original 3000 kg propellant was infeasible (needs
-  ~1.85 km/s impulsive; had 1.55 km/s total). Now 8000 kg, plus
+  ~1.85 km/s impulsive at the original 14° separation, ~1.6 km/s at 30°;
+  3000 kg gives 1.55 km/s total). Now 8000 kg, plus
   `p.landingPropReserve = 800` kg and `p.boostbackNodes = 40`.
-- **T_coast estimate quality**: at 8000 kg it's within ~0.2% of the best
-  fixed T_coast. The low-T/W infeasibility seen in v1 (10000 kg) was caused
+- **T_coast estimate quality**: within ~1% of the best fixed T_coast at the
+  30° nominal (~0.2% at the old 14° one). The low-T/W infeasibility seen in v1 (10000 kg) was caused
   by the tight pointing cone and is gone with the 90° half-space.
 - **Falcon Heavy check** (`sim/validate_falcon_heavy.m`,
   `params/falconHeavySideBoosterParams.m`): BECO state and propellant aren't
@@ -151,7 +161,7 @@ The design below was implemented as agreed in `guidance/boostback_guidance.m`
   `simulink/run_and_plot.m` (trajectory by phase, altitude, speed, thrust,
   flight-path vs thrust angle, mass, thrust acceleration).
 - **Vacuum consequence for Phase 3**: without drag the coast reaches the
-  3000 m ignition altitude at ~1.6 km/s — no landing burn from there can be
+  3000 m ignition altitude at ~1.8 km/s — no landing burn from there can be
   feasible. Phase 3 needs either Phase 4 drag first, or a much higher
   ignition point for a vacuum-only demo. Decide before starting Phase 3.
 

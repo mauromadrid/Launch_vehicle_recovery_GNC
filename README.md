@@ -23,8 +23,9 @@ boostback -> coast -> landing sequence.
 convexified SOCP solved with `coneprog` (`guidance/boostback_guidance.m`).
 The burn targets a fixed-duration ballistic coast that ends at the
 landing-burn ignition point; flown through the nonlinear EOM (MATLAB and
-Simulink), the vehicle arrives there within ~0.5 m after a ~97 s burn
-and ~205 s coast.
+Simulink), the vehicle arrives there within ~1 m. For the nominal return
+to the launch site (separation at 1649 m/s, 30° flight-path angle) that's
+an ~86 s burn using 6.1 t of the 8 t propellant, then a ~256 s coast.
 
 **Phase 3 (next):** convex landing-burn guidance. The landing burn is
 still a placeholder, so touchdown is still hard.
@@ -170,7 +171,7 @@ runtests('tests')
   the altitude range involved here; revisit with an inverse-square or
   WGS84 gravity model if the trajectory range grows significantly.
 - No aerodynamic forces yet (added in Phase 4). In vacuum the coast
-  reaches landing-burn ignition altitude at ~1.6 km/s, which the landing
+  reaches landing-burn ignition altitude at ~1.8 km/s, which the landing
   propellant reserve (`p.landingPropReserve`, sized assuming drag brings
   the stage near terminal velocity) cannot cancel — expected until
   Phase 4.
