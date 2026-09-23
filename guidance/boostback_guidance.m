@@ -142,9 +142,14 @@ sol = solveBoostbackSOCP(tbOpt, prob, p);
 N = prob.N;
 dt = tbOpt / N;
 bb.t         = (0:N-1)' * dt;
-bb.aCmd      = sol.sigma(:);
+% Command the planned acceleration ||u||, not the slack sigma: the planned
+% trajectory is driven by u (v' = u + g), so flying ||u|| reproduces it
+% exactly. Flying sigma over-accelerates by the relaxation gap, which a
+% long coast amplifies (5e-5 gap -> >10 m miss). Mass then ends slightly
+% above plan (sigma >= ||u||), i.e. the planned propellant is conservative.
+bb.aCmd      = vecnorm(sol.u)';
 bb.theta     = atan2(sol.u(2,:), sol.u(1,:))';
-bb.T_nominal = sol.sigma(:) .* sol.m(1:N)';
+bb.T_nominal = bb.aCmd .* sol.m(1:N)';
 bb.duration  = tbOpt;
 bb.T_coast   = T_coast;
 bb.T_coastSource = coastSource;

@@ -122,8 +122,15 @@ The design below was implemented as agreed in `guidance/boostback_guidance.m`
   `bb.aCmd` and angle `bb.theta` at node times `bb.t`, flown as
   T = aCmd·m with the plant's actual mass (exact replay of the plan). In
   Simulink: 1-D Lookup Tables (flat interpolation) on Clock, times m_in.
-- **Result**: losslessness gap ~5e-7; nonlinear replay reaches the ignition
-  point within ~0.5 m (both MATLAB and Simulink). `coneprog`'s default
+- **aCmd = ‖u‖, not σ** (fixed after the first Monte Carlo): flying the slack
+  σ over-accelerates by the relaxation gap; a 5e-5 gap became >10 m of miss
+  after a long coast.
+- **Result**: losslessness gap ≤ ~5e-5; nonlinear replay reaches the ignition
+  point within ~1 m nominally (both MATLAB and Simulink), up to ~10 m across
+  the speed/FPA Monte Carlo. The residual is coneprog's tolerance on the 40
+  dynamics equalities (~0.03 m/s at cutoff) amplified by the coast. If it
+  ever matters: a least-norm polish of u against the exact linear
+  cutoff-state map (2 equations) would remove it. `coneprog`'s default
   tolerance leaves ~0.2 m on the affine constraint; tightening
   `ConstraintTolerance` to 1e-9 makes it stall (all solves "infeasible").
 - **Params changed**: the original 3000 kg propellant was infeasible (needs
