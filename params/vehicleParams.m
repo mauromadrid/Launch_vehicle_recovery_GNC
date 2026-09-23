@@ -37,8 +37,8 @@ p.propMassAtSeparation = 8000;  % [kg] propellant remaining for
 % The stage separates while still moving away from the launch site.
 p.sep.x  = 45e3;  % [m]   downrange position at separation
 p.sep.y  = 65e3;  % [m]   altitude at separation
-p.sep.vx = 1600;  % [m/s] downrange velocity at separation
-p.sep.vy = 400;   % [m/s] vertical velocity at separation (still ascending)
+p.sep.vx = 1428;  % [m/s] downrange velocity at separation
+p.sep.vy = 824;   % [m/s] vertical velocity at separation (still ascending)
 
 % --- Landing target ---
 % The landing site is independent of the launch site (x = 0): x = 0 is a
