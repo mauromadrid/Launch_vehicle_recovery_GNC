@@ -81,7 +81,12 @@ for k = 1:N
     [~, xk] = ode45(@(t, x) threeDOF_EOM(t, x, thrustFcn, p), [0 dtNode], s, opts);
     s = xk(end, :)';
 end
-testCase.verifyEqual(s(1:4), bb.cutoffState(1:4), 'RelTol', 1e-5);
+% Absolute tolerances: coneprog satisfies the 40 dynamics equalities only
+% to its tolerance (~0.03 m/s at cutoff worst case), and relative
+% tolerances would fail spuriously on near-zero components (e.g. vx ~ 0
+% when the boostback kills almost all horizontal speed).
+testCase.verifyEqual(s(1:2), bb.cutoffState(1:2), 'AbsTol', 1);
+testCase.verifyEqual(s(3:4), bb.cutoffState(3:4), 'AbsTol', 0.05);
 testCase.verifyEqual(s(5), bb.cutoffState(5), 'RelTol', 1e-6);
 
 coastOpts = odeset(opts, 'Events', @(t, x) altitudeEvent(t, x, p.landingIgniteAltitude));
@@ -93,11 +98,14 @@ end
 
 function testDownrangeLandingSites(testCase)
 % The landing site is a free parameter. Sites closer to the natural
-% ballistic impact point (~300 km here) need less reversal, so the burn
-% must stay feasible and get cheaper than RTLS. (Regression: a tight
-% pointing cone about the estimated axis once made these infeasible.)
+% ballistic impact point need less reversal, so the burn must stay
+% feasible and get cheaper than a return to the launch site. (Regression:
+% a tight pointing cone about the estimated axis once made these
+% infeasible.) The RTLS baseline is computed here, so the test doesn't
+% depend on which landing site vehicleParams currently uses.
 p = testCase.TestData.p;
-propRTLS = testCase.TestData.bb.propUsed;
+p.target.x = 0;
+propRTLS = boostback_guidance([], p).propUsed;
 for xt = [100e3 200e3]
     p.target.x = xt;
     bb = boostback_guidance([], p);

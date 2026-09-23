@@ -217,7 +217,13 @@ add_line(mdl, 'TimeGuard/1', 'StopAND/2');
 add_line(mdl, 'StopAND/1', 'StopSim/1');
 
 %% ---- Model configuration ----
-set_param(mdl, 'Solver', 'ode45', 'RelTol', '1e-9', 'AbsTol', '1e-9', 'StopTime', '600');
+% MaxStep: in the coast the motion is an exact parabola, so ode45's error
+% control would otherwise take ~25 s steps -- accurate, but the logged
+% signals become a few points joined by straight lines, and the solver
+% steps far past events without zero-crossing detection (lookup-table
+% node boundaries, the touchdown stop).
+set_param(mdl, 'Solver', 'ode45', 'RelTol', '1e-9', 'AbsTol', '1e-9', ...
+               'MaxStep', '0.5', 'StopTime', '600');
 
 % Self-contained: (re)derive p, bb, ld whenever the model is simulated,
 % regardless of what folder MATLAB's current working directory is.

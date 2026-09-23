@@ -26,9 +26,15 @@ for k = 1:N
     kA = [kA; repmat(k, numel(tk) - 1, 1)];  %#ok<AGROW>
 end
 
+% Ballistic motion is a parabola, which ode45 integrates exactly, so its
+% error control lets steps grow to tens of seconds. The accuracy is fine
+% (~1e-11 m), but plots would join a handful of points with straight
+% lines. Ask for output every dtOut seconds instead (ode45 interpolates
+% between its own steps; the terminal event is still located exactly).
+dtOut = 0.5;
 coastOpts = odeset(odeOpts, 'Events', @(t, s) altitudeEvent(t, s, p.landingIgniteAltitude));
 [tB, XB] = ode45(@(t, s) threeDOF_EOM(t, s, @(~, ~) deal(0, 0), p), ...
-                 [0, 5 * bb.T_coast + 100], XA(end,:)', coastOpts);
+                 0:dtOut:(5 * bb.T_coast + 100), XA(end,:)', coastOpts);
 
 traj = struct('tA', tA, 'XA', XA, 'kA', kA, 'tB', tB, 'XB', XB, ...
               'ignition', XB(end,:)');
