@@ -14,11 +14,16 @@ p.g  = 9.80665;   % [m/s^2] local gravity (flat-Earth, constant-g
 
 % --- Propulsion ---
 p.Isp             = 283;     % [s] representative sea-level Isp (LOX/RP-1-class)
-p.nEnginesLanding = 1;       % number of engines used for the landing burn
+p.nEnginesLanding   = 1;     % number of engines used for the landing burn
+p.nEnginesBoostback = 1;     % number of engines used for the boostback burn
 p.T_engine_max    = 200e3;   % [N] max thrust per engine
 p.throttle_min    = 0.40;    % minimum throttle fraction (deep-throttling limit)
-p.T_max = p.nEnginesLanding * p.T_engine_max;
+% Thrust bounds per burn: an engine that is lit can't throttle below
+% throttle_min, so the lower bound scales with the engine count too.
+p.T_max = p.nEnginesLanding * p.T_engine_max;       % landing burn
 p.T_min = p.throttle_min * p.T_max;
+p.T_max_boostback = p.nEnginesBoostback * p.T_engine_max;
+p.T_min_boostback = p.throttle_min * p.T_max_boostback;
 
 % --- Mass properties (at stage separation) ---
 p.dryMass              = 4000;  % [kg] structural/dry mass of the stage
@@ -41,6 +46,10 @@ p.sep.vx = 1600;  % [m/s] downrange velocity at separation
 p.sep.vy = 400;   % [m/s] vertical velocity at separation (still ascending)
 
 % --- Landing target ---
+% The landing site is independent of the launch site (x = 0): x = 0 is a
+% return-to-launch-site (RTLS) landing zone, a large positive x is a
+% downrange droneship. Everything downstream (T_coast estimate, boostback
+% terminal constraint) reads p.target.x, so this is the only knob.
 p.target.x  = 0;   % [m]   downrange position of the landing site
 p.target.y  = 0;   % [m]   ground level
 p.target.vx = 0;   % [m/s] touchdown velocity target
@@ -53,13 +62,23 @@ p.landingIgniteAltitude = 3000;  % [m] altitude at which the landing
                                     %     logic
 
 % --- Constraints (used by the guidance modules, Phases 2-3) ---
-p.maxTiltAngle    = deg2rad(20);  % [rad] max thrust pointing angle from
-                                    %       the vehicle's vertical axis
+p.maxTiltAngle    = deg2rad(20);  % [rad] landing burn: max thrust angle
+                                    %       from the vehicle's vertical axis
 p.glideSlopeAngle = deg2rad(10);  % [rad] min angle of the glide-slope
                                     %       cone above the landing site
 
 % --- Boostback guidance (Phase 2) ---
 p.boostbackNodes     = 40;    % ZOH discretization intervals over the burn
+p.boostbackMaxDeviation = deg2rad(90); % [rad] max thrust angle from the
+                                %      boostback delta-v direction. 90 deg
+                                %      = half-space (never thrust against
+                                %      the manoeuvre). The vehicle flips
+                                %      freely during boostback, so a tight
+                                %      cone about this *estimated* axis is
+                                %      not physical: at 20 deg it forced
+                                %      ~70% extra fuel for downrange
+                                %      landing sites and broke the T_coast
+                                %      estimate there.
 p.landingPropReserve = 800;   % [kg] propellant the boostback must leave
                                 %      for the landing burn (floor on the
                                 %      burn-cutoff mass above dryMass).
@@ -67,5 +86,5 @@ p.landingPropReserve = 800;   % [kg] propellant the boostback must leave
                                 %      for a landing from near-terminal
                                 %      velocity, i.e. assumes Phase 4
                                 %      drag. In vacuum the coast reaches
-                                %      ignition altitude at ~1.3 km/s.
+                                %      ignition altitude at ~1.6 km/s.
 end

@@ -109,6 +109,30 @@ open-loop (as a zero-order-hold thrust-acceleration and angle schedule,
 `T = aCmd(t) * m`), coast to landing-burn ignition altitude, then run the
 placeholder landing burn — so neither lands softly yet (Phase 3).
 
+## Plots
+
+Both runners produce the same figure (`sim/plot_return_trajectory.m`):
+trajectory coloured by phase with launch site / landing site / aimed
+ignition point, altitude, speed, thrust magnitude (with boostback thrust
+bounds), flight-path angle vs thrust angle, mass, and thrust acceleration.
+
+## Choosing the landing site
+
+Set `p.target.x` in `params/vehicleParams.m` (x = 0 is the launch site, so
+0 is a return-to-launch-site landing; a large positive x is a downrange
+droneship). The boostback guidance aims for whatever is set.
+
+## Falcon Heavy sanity check
+
+```matlab
+run sim/validate_falcon_heavy.m   % ~7 min
+```
+
+Runs the boostback guidance with Falcon Heavy side-booster parameters
+(sourced where public, see `params/falconHeavySideBoosterParams.m`) over an
+envelope of BECO states, checking feasibility is monotonic in propellant and
+reporting the minimum boostback propellant and burn duration.
+
 ## Running the tests
 
 ```matlab

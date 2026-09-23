@@ -41,11 +41,11 @@ function testThrustAndPointingConstraints(testCase)
 p = testCase.TestData.p;
 bb = testCase.TestData.bb;
 tol = 1e-3;
-testCase.verifyGreaterThanOrEqual(bb.T_nominal, p.T_min * (1 - tol));
-testCase.verifyLessThanOrEqual(bb.T_nominal, p.T_max * (1 + tol));
+testCase.verifyGreaterThanOrEqual(bb.T_nominal, p.T_min_boostback * (1 - tol));
+testCase.verifyLessThanOrEqual(bb.T_nominal, p.T_max_boostback * (1 + tol));
 
 pointingDev = acos([cos(bb.theta) sin(bb.theta)] * bb.nRef);
-testCase.verifyLessThanOrEqual(pointingDev, p.maxTiltAngle + 1e-4);
+testCase.verifyLessThanOrEqual(pointingDev, p.boostbackMaxDeviation + 1e-4);
 end
 
 function testLandingReserveIsKept(testCase)
@@ -89,6 +89,27 @@ coastOpts = odeset(opts, 'Events', @(t, x) altitudeEvent(t, x, p.landingIgniteAl
                  [0 2 * bb.T_coast], s, coastOpts);
 testCase.verifyEqual(xB(end, 1), bb.rTarget(1), 'AbsTol', 5);
 testCase.verifyEqual(tB(end), bb.T_coast, 'AbsTol', 0.05);
+end
+
+function testDownrangeLandingSites(testCase)
+% The landing site is a free parameter. Sites closer to the natural
+% ballistic impact point (~300 km here) need less reversal, so the burn
+% must stay feasible and get cheaper than RTLS. (Regression: a tight
+% pointing cone about the estimated axis once made these infeasible.)
+p = testCase.TestData.p;
+propRTLS = testCase.TestData.bb.propUsed;
+for xt = [100e3 200e3]
+    p.target.x = xt;
+    bb = boostback_guidance([], p);
+    c = bb.cutoffState;
+    xEnd = c(1) + c(3) * bb.T_coast;
+    % coneprog's constraint tolerance is relative, so the residual grows
+    % with target distance (~2 m at 200 km) -- still far inside what the
+    % landing burn absorbs.
+    testCase.verifyEqual(xEnd, xt, 'AbsTol', 5);
+    testCase.verifyLessThan(bb.propUsed, propRTLS);
+    testCase.verifyLessThan(bb.relaxationGap, 1e-4);
+end
 end
 
 function testInfeasibleBudgetErrors(testCase)

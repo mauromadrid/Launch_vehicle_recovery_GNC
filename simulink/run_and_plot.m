@@ -19,24 +19,13 @@ data = simlog.signals.values; % columns: x y vx vy m T_cmd theta_cmd
 fprintf('Simulation stopped at t = %.2f s\n', t(end));
 fprintf('Final [x y vx vy m]: '); disp(data(end,1:5));
 
-figure('Name', 'Booster Return - Simulink Model');
+% Phase event times: boostback cutoff is the scheduled burn end; landing
+% ignition is the first sample after it at/below the ignition altitude.
+p  = vehicleParams();
+bb = boostback_guidance([], p);
+ev.tCutoff = bb.duration;
+iIgn = find(t > bb.duration & data(:,2) <= p.landingIgniteAltitude, 1);
+if isempty(iIgn), ev.tIgnite = NaN; else, ev.tIgnite = t(iIgn); end
 
-subplot(2,2,1);
-plot(data(:,1)/1000, data(:,2)/1000, '-o', 'LineWidth', 1.5); grid on;
-xlabel('Downrange [km]'); ylabel('Altitude [km]');
-title('Trajectory');
-
-subplot(2,2,2);
-plot(t, data(:,2)/1000, '-o', 'LineWidth', 1.5); grid on;
-xlabel('Time [s]'); ylabel('Altitude [km]');
-title('Altitude vs Time');
-
-subplot(2,2,3);
-plot(t, vecnorm(data(:,3:4),2,2), '-o', 'LineWidth', 1.5); grid on;
-xlabel('Time [s]'); ylabel('Speed [m/s]');
-title('Speed vs Time');
-
-subplot(2,2,4);
-plot(t, data(:,5), '-o', 'LineWidth', 1.5); grid on;
-xlabel('Time [s]'); ylabel('Mass [kg]');
-title('Mass vs Time');
+plot_return_trajectory(t, data(:,1:5), data(:,6), data(:,7), p, ev, ...
+                       'Booster Return - Simulink Model');

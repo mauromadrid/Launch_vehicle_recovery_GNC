@@ -1,4 +1,4 @@
-function [T_coast, vNeeded] = estimate_coast_duration(r0, v0, rTarget, p)
+function [T_coast, vNeeded, vNeededFcn] = estimate_coast_duration(r0, v0, rTarget, p)
 %ESTIMATE_COAST_DURATION Pick the fixed ballistic-coast duration used by
 %   the boostback guidance's affine terminal constraint.
 %
@@ -29,6 +29,7 @@ function [T_coast, vNeeded] = estimate_coast_duration(r0, v0, rTarget, p)
 %   Outputs:
 %     T_coast  - chosen coast duration [s]
 %     vNeeded  - [vx; vy] needed at the start of the coast [m/s]
+%     vNeededFcn - @(T) the same needed velocity for any coast duration T
 
 g = p.g;
 dr = rTarget(:) - r0(:);

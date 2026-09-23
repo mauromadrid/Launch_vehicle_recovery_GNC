@@ -8,7 +8,9 @@ function bb = boostback_guidance(state0, p)
 %   Because vacuum, constant-g coast dynamics are linear, "coasting
 %   T_coast seconds from the burn-cutoff state reaches the target" is an
 %   affine equality on the cutoff state -- which keeps the problem convex.
-%   T_coast itself is fixed beforehand by estimate_coast_duration().
+%   T_coast itself is fixed beforehand by estimate_coast_duration(); if
+%   that value turns out infeasible, a fallback scan over T_coast picks
+%   the cheapest feasible one (see below).
 %
 %   Formulation (Acikmese & Ploen 2007 change of variables):
 %       u = T/m (thrust acceleration), sigma = Gamma/m, z = ln(m/m0)
@@ -19,8 +21,9 @@ function bb = boostback_guidance(state0, p)
 %       minimize    sum_k sigma_k * dt           (= delta-v = fuel)
 %       subject to  exact ZOH-discretized dynamics above
 %                   ||u_k|| <= sigma_k                        (SOC)
-%                   n'*u_k >= cos(maxTiltAngle) * sigma_k     (pointing)
-%                   T_min*e^-z <= sigma <= T_max*e^-z  (Taylor-expanded
+%                   n'*u_k >= cos(boostbackMaxDeviation)*sigma_k (pointing)
+%                   T_min*e^-z <= sigma <= T_max*e^-z  (boostback engine
+%                       count's bounds, p.T_min/max_boostback; Taylor-expanded
 %                       about the max-thrust mass profile: SOC lower,
 %                       linear upper bound)
 %                   r_0, v_0, z_0 = current state
@@ -29,13 +32,17 @@ function bb = boostback_guidance(state0, p)
 %                   m_N >= dryMass + landingPropReserve
 %
 %   The pointing cone is about a reference axis n, the direction of the
-%   impulsive delta-v needed to enter the coast arc (the vehicle flips
-%   to a boostback attitude and may only deviate maxTiltAngle from it).
-%   Phase 3's landing burn will use the same constraint with n = up.
+%   impulsive delta-v needed to enter the coast arc. It is deliberately
+%   wide (default 90 deg, a half-space): n is only an estimate, and a
+%   tight cone about it costs fuel and can make feasible targets
+%   infeasible. Phase 3's landing burn uses the same constraint form
+%   with n = up and the tight p.maxTiltAngle.
 %
 %   Free burn duration is non-convex, so t_b is handled by an outer 1D
-%   search (coarse grid + fminbnd), each evaluation being one SOCP --
-%   the standard G-FOLD treatment of free final time.
+%   search (geometric grid + fminbnd), each evaluation being one SOCP --
+%   the standard G-FOLD treatment of free final time. The landing site
+%   can be anywhere (p.target.x): an RTLS pad needs a full reversal, a
+%   droneship near the natural impact point only a short trim burn.
 %
 %   bb = boostback_guidance(state0, p)
 %     state0 - [x; y; vx; vy; m] at burn start; [] = separation state
@@ -48,6 +55,7 @@ function bb = boostback_guidance(state0, p)
 %     T_nominal  - N x 1 thrust magnitude on the planned mass profile [N]
 %     duration   - burn duration t_b [s]
 %     T_coast    - fixed coast duration used in the terminal constraint [s]
+%     T_coastSource - 'estimate' or 'fallback scan'
 %     rTarget    - coast end point the burn is aimed at [m]
 %     r, v, m    - planned node states (N+1 columns / entries)
 %     cutoffState- planned [x; y; vx; vy; m] at burn cutoff
@@ -67,10 +75,7 @@ v0 = state0(3:4);
 m0 = state0(5);
 
 rTarget = [p.target.x; p.landingIgniteAltitude];
-[T_coast, vNeeded] = estimate_coast_duration(r0, v0, rTarget, p);
-
-dvDir = vNeeded - v0;
-nRef = dvDir / norm(dvDir);
+[TcEst, ~, vNeededFcn] = estimate_coast_duration(r0, v0, rTarget, p);
 
 mFinalMin = p.dryMass + p.landingPropReserve;
 if m0 <= mFinalMin
@@ -79,31 +84,56 @@ if m0 <= mFinalMin
         m0, mFinalMin);
 end
 
-prob = struct('r0', r0, 'v0', v0, 'm0', m0, 'rTarget', rTarget, ...
-              'T_coast', T_coast, 'nRef', nRef, 'mFinalMin', mFinalMin, ...
-              'N', p.boostbackNodes);
+% Burn-duration grid, geometric so short trim burns (targets near the
+% natural ballistic impact point) are resolved as well as long reversals.
+% Upper end: engine can't throttle below T_min, so the longest possible
+% burn spends the whole propellant budget at T_min.
+tbMax = (m0 - mFinalMin) * p.Isp * p.g0 / p.T_min_boostback;
+tbGrid = tbMax * logspace(log10(0.005), 0, 25);
 
-% ---- Outer search over burn duration ----
-% Engine can't throttle below T_min, so the longest possible burn spends
-% the whole propellant budget at T_min.
-tbMax = (m0 - mFinalMin) * p.Isp * p.g0 / p.T_min;
-tbGrid = linspace(0.05 * tbMax, tbMax, 20);
-fuelGrid = arrayfun(@(tb) fuelForBurnDuration(tb, prob, p), tbGrid);
+makeProb = @(Tc) struct('r0', r0, 'v0', v0, 'm0', m0, 'rTarget', rTarget, ...
+    'T_coast', Tc, 'nRef', unitVec(vNeededFcn(Tc) - v0), ...
+    'mFinalMin', mFinalMin, 'N', p.boostbackNodes);
 
-[fuelBest, iBest] = min(fuelGrid);
+% ---- Coast duration: the delta-v estimate first, fallback scan second ----
+% The estimate treats the burn as impulsive at the separation point. For
+% long burns relative to the coast (downrange targets, low T/W) that
+% (T_coast, pointing axis) pair can be infeasible while neighbouring ones
+% aren't, so on failure scan T_coast around it (re-deriving the pointing
+% axis for each) and keep the cheapest feasible one.
+T_coast = TcEst;
+coastSource = 'estimate';
+[fuelBest, tbBest] = bestBurnOnGrid(tbGrid, makeProb(T_coast), p);
 if ~isfinite(fuelBest)
-    error('boostback_guidance:infeasible', ...
-        ['No feasible boostback burn found for burn durations up to %.1f s. ', ...
-         'Required impulsive delta-v is %.0f m/s; available (to the reserve ', ...
-         'floor) is %.0f m/s. Check the separation state / propellant in vehicleParams.'], ...
-        tbMax, norm(dvDir), p.Isp * p.g0 * log(m0 / mFinalMin));
+    TcScan = TcEst * linspace(0.3, 2, 15);
+    fuelScan = inf(size(TcScan));
+    tbScan = nan(size(TcScan));
+    for i = 1:numel(TcScan)
+        [fuelScan(i), tbScan(i)] = bestBurnOnGrid(tbGrid, makeProb(TcScan(i)), p);
+    end
+    [fuelBest, iBest] = min(fuelScan);
+    if ~isfinite(fuelBest)
+        dv = norm(vNeededFcn(TcEst) - v0);
+        error('boostback_guidance:infeasible', ...
+            ['No feasible boostback burn found (burns up to %.1f s, coast durations ', ...
+             '%.0f-%.0f s). Impulsive delta-v estimate is %.0f m/s; available (to the ', ...
+             'reserve floor) is %.0f m/s. Check the separation state / propellant.'], ...
+            tbMax, TcScan(1), TcScan(end), dv, p.Isp * p.g0 * log(m0 / mFinalMin));
+    end
+    T_coast = TcScan(iBest);
+    tbBest = tbScan(iBest);
+    coastSource = 'fallback scan';
 end
-tbLo = tbGrid(max(iBest - 1, 1));
-tbHi = tbGrid(min(iBest + 1, numel(tbGrid)));
+prob = makeProb(T_coast);
+
+% ---- Refine the burn duration around the best grid point ----
+iGrid = find(tbGrid == tbBest, 1);
+tbLo = tbGrid(max(iGrid - 1, 1));
+tbHi = tbGrid(min(iGrid + 1, numel(tbGrid)));
 tbOpt = fminbnd(@(tb) fuelForBurnDuration(tb, prob, p), tbLo, tbHi, ...
                 optimset('TolX', 1e-3));
 if fuelForBurnDuration(tbOpt, prob, p) > fuelBest
-    tbOpt = tbGrid(iBest); % fminbnd can land on an infeasible edge
+    tbOpt = tbBest; % fminbnd can land on an infeasible edge
 end
 
 sol = solveBoostbackSOCP(tbOpt, prob, p);
@@ -117,14 +147,28 @@ bb.theta     = atan2(sol.u(2,:), sol.u(1,:))';
 bb.T_nominal = sol.sigma(:) .* sol.m(1:N)';
 bb.duration  = tbOpt;
 bb.T_coast   = T_coast;
+bb.T_coastSource = coastSource;
 bb.rTarget   = rTarget;
-bb.nRef      = nRef;
+bb.nRef      = prob.nRef;
 bb.r         = sol.r;
 bb.v         = sol.v;
 bb.m         = sol.m;
 bb.cutoffState = [sol.r(:,end); sol.v(:,end); sol.m(end)];
 bb.propUsed  = m0 - sol.m(end);
 bb.relaxationGap = max((sol.sigma - vecnorm(sol.u)) ./ sol.sigma);
+end
+
+% =====================================================================
+function [fuelBest, tbBest] = bestBurnOnGrid(tbGrid, prob, p)
+% Cheapest feasible burn duration on the grid (fuelBest = Inf if none).
+fuelGrid = arrayfun(@(tb) fuelForBurnDuration(tb, prob, p), tbGrid);
+[fuelBest, iBest] = min(fuelGrid);
+tbBest = tbGrid(iBest);
+end
+
+% =====================================================================
+function n = unitVec(v)
+n = v / norm(v);
 end
 
 % =====================================================================
@@ -154,8 +198,8 @@ dt    = tb / N / Tsc;
 Tcst  = prob.T_coast / Tsc;
 gVec  = [0; -1];
 alpha = Asc * Tsc / (p.Isp * p.g0);          % z' = -alpha * sigma
-rho1  = p.T_min / (prob.m0 * Asc);           % thrust bounds as accel at m0
-rho2  = p.T_max / (prob.m0 * Asc);
+rho1  = p.T_min_boostback / (prob.m0 * Asc); % thrust bounds as accel at m0
+rho2  = p.T_max_boostback / (prob.m0 * Asc);
 
 % Mass-profile bounds: fastest (T_max) and slowest (T_min) possible burn.
 % zLo is also the Taylor-expansion point for the thrust bounds.
@@ -207,7 +251,7 @@ Aeq(row, [iR(2,end) iV(2,end)]) = [1 Tcst];
 beq(row) = rT(2) + 0.5 * Tcst^2;
 
 % ---- Linear inequality constraints ----
-cosTilt = cos(p.maxTiltAngle);
+cosTilt = cos(p.boostbackMaxDeviation);
 mu1 = rho1 * exp(-zLo(1:N));
 mu2 = rho2 * exp(-zLo(1:N));
 A = spalloc(2*N + 1, nVar, 6*N + 1);

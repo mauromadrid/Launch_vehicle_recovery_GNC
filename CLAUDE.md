@@ -99,9 +99,25 @@ The design below was implemented as agreed in `guidance/boostback_guidance.m`
   later shrinking-horizon replanning / code generation in mind.
 - **Burn duration** is not in the convex problem: outer 1D search (20-point
   grid + `fminbnd`), one SOCP per evaluation (~2 s total).
-- **Pointing constraint**: `p.maxTiltAngle` is applied about a reference axis
-  n = direction of the impulsive Δv into the coast arc, not about vertical —
-  a vertical cone would make boostback impossible. Phase 3 uses n = up.
+- **Pointing constraint**: boostback uses its own `p.boostbackMaxDeviation`
+  (default 90°, a half-space) about n = direction of the impulsive Δv into
+  the coast arc. `p.maxTiltAngle` (20°) is the landing burn's, about
+  vertical. History: v1 reused the 20° cone about n — fine for RTLS, but for
+  downrange landing sites it cost up to ~70% extra fuel and made feasible
+  targets infeasible (n is only an estimate; the real vehicle flips freely,
+  its limit is attitude *rate*, not a cone). Don't tighten it back without
+  a reason.
+- **Landing site** is free: `p.target.x` (x = 0 is the launch site / RTLS;
+  large x = droneship). Verified −20…400 km, all via the T_coast estimate.
+  Near the natural impact point (~300 km) the burn shrinks to a ~1 s trim
+  (min-throttle impulse is the floor).
+- **Thrust bounds per burn**: `p.nEnginesBoostback` → `p.T_min/T_max_boostback`
+  (guidance uses these); `p.T_min/T_max` remain the landing burn's.
+- **T_coast fallback**: if the estimated T_coast is infeasible, a scan over
+  0.3–2× the estimate (re-deriving n per value) picks the cheapest feasible
+  one (`bb.T_coastSource` says which). With the 90° cone it hasn't been
+  needed in any tested case, but infeasible cases are slow (~13 s) because
+  of it.
 - **Output / how it's flown**: ZOH profile of thrust-acceleration magnitude
   `bb.aCmd` and angle `bb.theta` at node times `bb.t`, flown as
   T = aCmd·m with the plant's actual mass (exact replay of the plan). In
@@ -114,11 +130,19 @@ The design below was implemented as agreed in `guidance/boostback_guidance.m`
   ~1.85 km/s impulsive; had 1.55 km/s total). Now 8000 kg, plus
   `p.landingPropReserve = 800` kg and `p.boostbackNodes = 40`.
 - **T_coast estimate quality**: at 8000 kg it's within ~0.2% of the best
-  fixed T_coast. But at low T/W (e.g. 10000 kg, T/W≈1.46) the burn gets long,
-  the separation-position approximation breaks down, and the estimated
-  T_coast (205 s) is outright infeasible while 180 s works. If this bites
-  (e.g. Monte Carlo dispersions), add an outer search / fallback over
-  T_coast, or estimate it from a predicted cutoff position.
+  fixed T_coast. The low-T/W infeasibility seen in v1 (10000 kg) was caused
+  by the tight pointing cone and is gone with the 90° half-space.
+- **Falcon Heavy check** (`sim/validate_falcon_heavy.m`,
+  `params/falconHeavySideBoosterParams.m`): BECO state and propellant aren't
+  public, so it sweeps an envelope (1.5–1.9 km/s, 25–35° FPA). Feasibility is
+  monotonic in propellant everywhere; min boostback propellant 14–21 t
+  (~4–5% of the 411 t load). But predicted min-fuel burns are 15–28 s vs the
+  observed "just over one minute" — unresolved; likely the real BECO state
+  (speed/mass) differs from the envelope and/or the real burn isn't
+  min-fuel at full 3-engine thrust. Needs real BECO telemetry to settle.
+- **Plots**: `sim/plot_return_trajectory.m` is shared by the MATLAB demo and
+  `simulink/run_and_plot.m` (trajectory by phase, altitude, speed, thrust,
+  flight-path vs thrust angle, mass, thrust acceleration).
 - **Vacuum consequence for Phase 3**: without drag the coast reaches the
   3000 m ignition altitude at ~1.6 km/s — no landing burn from there can be
   feasible. Phase 3 needs either Phase 4 drag first, or a much higher
