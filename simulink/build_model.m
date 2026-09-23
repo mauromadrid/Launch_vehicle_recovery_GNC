@@ -10,7 +10,9 @@
 % Architecture:
 %   VehicleDynamics subsystem   - planar 3DOF point-mass EOM (native
 %                                  Integrator/Product/Trig/Sum blocks),
-%                                  mirrors dynamics/threeDOF_EOM.m
+%                                  mirrors dynamics/threeDOF_EOM.m, with a
+%                                  Drag subsystem (COESA atmosphere block,
+%                                  CD(Mach) lookup) = dragAcceleration.m
 %   GuidancePhaseLogic subsystem - boostback / coast / landing phase
 %                                  sequencing via Switch blocks, driven
 %                                  by elapsed time and altitude. The
@@ -74,7 +76,8 @@ add_block('simulink/Math Operations/Trigonometric Function', [dynPath '/SinTheta
 add_block('simulink/Math Operations/Product', [dynPath '/Ax_Prod']);
 add_block('simulink/Math Operations/Product', [dynPath '/Ay_Prod']);
 add_block('simulink/Sources/Constant', [dynPath '/g_const'], 'Value', 'p.g');
-add_block('simulink/Math Operations/Sum', [dynPath '/Ay_Sum'], 'Inputs', '+-');
+add_block('simulink/Math Operations/Sum', [dynPath '/Ax_Sum'], 'Inputs', '++');   % thrust + drag
+add_block('simulink/Math Operations/Sum', [dynPath '/Ay_Sum'], 'Inputs', '+-+');  % thrust - g + drag
 
 add_block('simulink/Math Operations/Gain', [dynPath '/MdotGain'], 'Gain', '-1/(p.Isp*p.g0)');
 
@@ -101,7 +104,8 @@ add_line(dynPath, 'g_const/1', 'Ay_Sum/2');
 
 add_line(dynPath, 'ThrustGate/1', 'MdotGain/1');
 
-add_line(dynPath, 'Ax_Prod/1', 'Int_vx/1');
+add_line(dynPath, 'Ax_Prod/1', 'Ax_Sum/1');
+add_line(dynPath, 'Ax_Sum/1', 'Int_vx/1');
 add_line(dynPath, 'Ay_Sum/1', 'Int_vy/1');
 add_line(dynPath, 'Int_vx/1', 'Int_x/1');
 add_line(dynPath, 'Int_vy/1', 'Int_y/1');
@@ -112,6 +116,67 @@ add_line(dynPath, 'Int_y/1',  'y_out/1');
 add_line(dynPath, 'Int_vx/1', 'vx_out/1');
 add_line(dynPath, 'Int_vy/1', 'vy_out/1');
 add_line(dynPath, 'Int_m/1',  'm_out/1');
+
+% ---- Drag subsystem (mirrors dynamics/dragAcceleration.m) ----
+%   a_drag = -k * v,  k = 0.5 * rho * V * CD(Mach) * A_ref / m
+% COESA 1976 atmosphere (Aerospace Blockset block), altitude clamped to
+% [0, p.atmo.maxAltitude] because COESA's extrapolated temperature goes
+% negative above ~175 km. The drag gain includes p.aero.dragEnabled so
+% the same model runs as a vacuum plant.
+dragPath = [dynPath '/Drag'];
+add_block('simulink/Ports & Subsystems/Subsystem', dragPath);
+try, delete_line(dragPath, 'In1/1', 'Out1/1'); catch, end
+set_param([dragPath '/In1'], 'Name', 'vx');
+add_block('simulink/Sources/In1', [dragPath '/vy'], 'Port', '2');
+add_block('simulink/Sources/In1', [dragPath '/h'],  'Port', '3');
+add_block('simulink/Sources/In1', [dragPath '/m'],  'Port', '4');
+set_param([dragPath '/Out1'], 'Name', 'ax_drag');
+add_block('simulink/Sinks/Out1', [dragPath '/ay_drag'], 'Port', '2');
+
+add_block('simulink/Math Operations/Math Function', [dragPath '/Speed'], 'Operator', 'hypot');
+add_block('simulink/Discontinuities/Saturation', [dragPath '/AltitudeClamp'], ...
+    'LowerLimit', '0', 'UpperLimit', 'p.atmo.maxAltitude');
+add_block('aerolibatmos/COESA Atmosphere Model', [dragPath '/COESA']);
+add_block('simulink/Sinks/Terminator', [dragPath '/TermT']);
+add_block('simulink/Sinks/Terminator', [dragPath '/TermP']);
+add_block('simulink/Math Operations/Divide', [dragPath '/Mach']);
+add_block('simulink/Lookup Tables/1-D Lookup Table', [dragPath '/CD_of_Mach'], ...
+    'Table', 'p.aero.CD', 'BreakpointsForDimension1', 'p.aero.mach', ...
+    'ExtrapMethod', 'Clip');
+add_block('simulink/Math Operations/Product', [dragPath '/rhoVCD_over_m'], 'Inputs', '***/');
+add_block('simulink/Math Operations/Gain', [dragPath '/NegHalfAref'], ...
+    'Gain', '-0.5*p.aero.A_ref*p.aero.dragEnabled');
+add_block('simulink/Math Operations/Product', [dragPath '/AxDrag']);
+add_block('simulink/Math Operations/Product', [dragPath '/AyDrag']);
+
+add_line(dragPath, 'vx/1', 'Speed/1');
+add_line(dragPath, 'vy/1', 'Speed/2');
+add_line(dragPath, 'h/1', 'AltitudeClamp/1');
+add_line(dragPath, 'AltitudeClamp/1', 'COESA/1');
+add_line(dragPath, 'COESA/1', 'TermT/1');
+add_line(dragPath, 'COESA/3', 'TermP/1');
+add_line(dragPath, 'Speed/1', 'Mach/1');
+add_line(dragPath, 'COESA/2', 'Mach/2');          % speed of sound
+add_line(dragPath, 'Mach/1', 'CD_of_Mach/1');
+add_line(dragPath, 'COESA/4', 'rhoVCD_over_m/1'); % density
+add_line(dragPath, 'Speed/1', 'rhoVCD_over_m/2');
+add_line(dragPath, 'CD_of_Mach/1', 'rhoVCD_over_m/3');
+add_line(dragPath, 'm/1', 'rhoVCD_over_m/4');
+add_line(dragPath, 'rhoVCD_over_m/1', 'NegHalfAref/1');
+add_line(dragPath, 'NegHalfAref/1', 'AxDrag/1');
+add_line(dragPath, 'vx/1', 'AxDrag/2');
+add_line(dragPath, 'NegHalfAref/1', 'AyDrag/1');
+add_line(dragPath, 'vy/1', 'AyDrag/2');
+add_line(dragPath, 'AxDrag/1', 'ax_drag/1');
+add_line(dragPath, 'AyDrag/1', 'ay_drag/1');
+Simulink.BlockDiagram.arrangeSystem(dragPath);
+
+add_line(dynPath, 'Int_vx/1', 'Drag/1');
+add_line(dynPath, 'Int_vy/1', 'Drag/2');
+add_line(dynPath, 'Int_y/1',  'Drag/3');
+add_line(dynPath, 'Int_m/1',  'Drag/4');
+add_line(dynPath, 'Drag/1', 'Ax_Sum/2');
+add_line(dynPath, 'Drag/2', 'Ay_Sum/3');
 
 Simulink.BlockDiagram.arrangeSystem(dynPath);
 

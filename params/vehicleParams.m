@@ -57,6 +57,32 @@ p.landingIgniteAltitude = 3000;  % [m] altitude at which the landing
                                     %     placeholder) phase-sequencing
                                     %     logic
 
+% --- Aerodynamics (Phase 4) ---
+% Drag only (no lift, zero angle of attack): the stage descends engine-
+% first, so the relevant drag is that of a blunt base leading.
+%   D = 0.5 * rho * V^2 * CD(Mach) * A_ref, opposite to the velocity.
+% The CD(Mach) curve is ILLUSTRATIVE: the generic blunt-body trend
+% (subsonic ~0.8-0.9, transonic rise, supersonic plateau below the
+% stagnation-pressure coefficient, 1.84 at the hypersonic limit for a
+% flat face). Real tail-first booster data comes from wind tunnel + CFD
+% databases, e.g. DLR's CALLISTO and the EU RETALT project.
+p.aero.dragEnabled = true;       % false = vacuum plant (for comparisons/tests)
+p.aero.diameter    = 1.5;        % [m] reference diameter (A_ref: deriveParams)
+p.aero.mach = [0    0.5  0.8  1.0  1.2  1.5  2.0  3.0  5.0  10  ];
+p.aero.CD   = [0.80 0.82 0.90 1.20 1.45 1.50 1.45 1.35 1.30 1.28];
+
+% --- Atmosphere ---
+% Plant ("truth"): COESA 1976 via atmoscoesa / the Aerospace Blockset
+% COESA block. Its extrapolation above 86 km lets temperature fall
+% linearly (negative at ~175 km), so the altitude fed to it is clamped at
+% maxAltitude, where density (~3e-14 kg/m^3) already makes drag zero.
+p.atmo.maxAltitude = 150e3;      % [m]
+% Guidance model: exponential rho = rho0*exp(-h/H), least-squares fit to
+% COESA over 0-80 km (density within +-23%). Deliberately simpler than the
+% plant, as real onboard models are; used by the drag bias estimator.
+p.atmo.rho0 = 1.4168;            % [kg/m^3]
+p.atmo.H    = 7008;              % [m] scale height
+
 % --- Constraints (used by the guidance modules, Phases 2-3) ---
 p.maxTiltAngle    = deg2rad(20);  % [rad] landing burn: max thrust angle
                                     %       from the vehicle's vertical axis

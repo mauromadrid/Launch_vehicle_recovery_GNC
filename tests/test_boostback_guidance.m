@@ -8,7 +8,11 @@ end
 
 function setupOnce(testCase)
 addpath(genpath(fileparts(fileparts(mfilename('fullpath')))));
+% The guidance plans in vacuum; these tests check that plan against a
+% vacuum plant. Flying it through the drag plant is a separate study
+% (sim/study_drag_effect.m), not a pass/fail property of the solver.
 p = vehicleParams();
+p.aero.dragEnabled = false;
 testCase.TestData.p = p;
 testCase.TestData.state0 = [p.sep.x; p.sep.y; p.sep.vx; p.sep.vy; p.m0];
 testCase.TestData.bb = boostback_guidance(testCase.TestData.state0, p);

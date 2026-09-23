@@ -295,7 +295,54 @@ later). Decisions and why:
   function needs InitFcn to accept an externally supplied `p` (e.g. via
   Simulink.SimulationInput variables) first.
 
-### Phase 4: Atmosphere & aerodynamics (drag)
+### Phase 4 as implemented so far: drag in the plant + effect study
+
+Done: drag in both plants; guidance unchanged (still vacuum). Decisions:
+
+- **Atmosphere split**: plant = COESA 1976 (`atmoscoesa` / Aerospace
+  Blockset "COESA Atmosphere Model" block); guidance/bias estimator (not
+  built yet) = exponential fit `p.atmo.rho0 = 1.4168`, `p.atmo.H = 7008 m`
+  (0–80 km least squares, density within ±23% — deliberate model mismatch).
+- COESA's extrapolation above 86 km drives temperature negative near
+  175 km (NaN speed of sound; MC apogees reach 220 km), so altitude into it
+  is clamped at `p.atmo.maxAltitude = 150 km` (density ~3e-14, drag ~0),
+  identically in MATLAB and Simulink. The Simulink block's once-per-run
+  extrapolation warning is silenced around `sim` in `run_and_plot.m`.
+- **CD(Mach)** is illustrative (generic blunt-base-first trend: ~0.8
+  subsonic, peak 1.5 at Mach 1.5, ~1.3 hypersonic); diameter 1.5 m.
+  Real tail-first data lives in wind-tunnel/CFD databases (DLR CALLISTO,
+  EU RETALT). Sensitivity on CD/diameter later via the MC catalog.
+- Drag written as a_drag = −k·v, k = ½ρV·CD·A/m: no division by V.
+- Existing EOM/guidance tests pin `p.aero.dragEnabled = false` (they test
+  vacuum physics / the vacuum plan's consistency); `tests/test_drag.m`
+  covers drag. MATLAB and Simulink agree exactly at ignition (checked at
+  the 100 km site: 99.93 km, 491.5 m/s, t = 255.9 s).
+
+**Findings** (`sim/study_drag_effect.m`, vacuum plan flown with drag,
+30° nominal separation):
+
+| Landing site | Downrange error at ignition (drag − vac) | Speed at 3 km: vac → drag | Ideal landing prop: vac → drag (available) | Peak q | Peak drag decel |
+|---|---|---|---|---|---|
+| 0 km (RTLS) | +0.08 km | 1789 → 458 m/s (M 1.4) | 2.8 → 0.9 t (1.9 t) | 229 kPa | 9.3 g |
+| 100 km | −0.07 km | 1443 → 492 m/s | 2.9 → 1.2 t (3.2 t) | 178 kPa | 6.1 g |
+| 200 km | −0.47 km | 1486 → 572 m/s | 3.8 → 1.7 t (5.1 t) | 209 kPa | 5.6 g |
+| 300 km | −0.75 km | 1787 → 691 m/s | 5.2 → 2.4 t (6.9 t) | 304 kPa | 6.7 g |
+
+- **Range effect is small (< 1 km)**: the descent is steep (FPA −50° to
+  −100° at ignition) and drag acts almost entirely below ~40 km, where
+  little horizontal distance remains. So the planned drag *bias
+  estimator* (aim-point iteration) matters less than expected for
+  targeting — the landing burn's divert can likely absorb it.
+- **Speed effect is large**: drag removes 1.0–1.4 km/s, which turns the
+  landing burn from impossible (vacuum) to affordable in every case.
+- **Loads are the real problem**: peak q 180–300 kPa and 6–9 g, around
+  8–11 km at Mach 3–4 — far beyond typical launcher ascent max-q (tens of
+  kPa). This is what an **entry burn** is for (next step): cut speed high
+  up so the dense-air part of the descent is flown slower.
+- Ignition at 3 km is still supersonic (Mach 1.4–2.1) — terminal velocity
+  (~250 m/s at sea level for this ballistic coefficient) is not reached.
+
+### Phase 4: Atmosphere & aerodynamics (drag) — original design notes
 
 Drag is a first-order effect at low altitude/high speed, not a rounding
 error — don't skip this consideration when the time comes. Two legitimate

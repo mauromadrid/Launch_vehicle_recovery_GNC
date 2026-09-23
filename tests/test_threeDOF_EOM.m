@@ -5,7 +5,9 @@ end
 
 function setupOnce(testCase)
 addpath(genpath(fileparts(fileparts(mfilename('fullpath')))));
+% Gravity/thrust/mass checks: vacuum plant (drag is tested in test_drag)
 testCase.TestData.p = vehicleParams();
+testCase.TestData.p.aero.dragEnabled = false;
 end
 
 function testZeroThrustIsFreeFall(testCase)

@@ -1,8 +1,8 @@
 function dstate = threeDOF_EOM(t, state, thrustFcn, p)
 %THREEDOF_EOM Planar (downrange/altitude) point-mass equations of motion
-%   for a thrust-vectored, mass-varying vehicle. No aerodynamic forces
-%   are modeled yet (Phase 1 scope) — exo-/thin-atmosphere boostback,
-%   coast, and landing-burn phases only.
+%   for a thrust-vectored, mass-varying vehicle, with aerodynamic drag
+%   (COESA atmosphere, CD(Mach); see dragAcceleration.m). Drag is switched
+%   off with p.aero.dragEnabled = false (vacuum plant).
 %
 %   state = [x; y; vx; vy; m]
 %
@@ -24,8 +24,10 @@ if m <= p.dryMass
     T = 0;
 end
 
-ax = (T / m) * cos(theta);
-ay = (T / m) * sin(theta) - p.g;
+aDrag = dragAcceleration(state, p);
+
+ax = (T / m) * cos(theta)          + aDrag(1);
+ay = (T / m) * sin(theta) - p.g    + aDrag(2);
 mdot = -T / (p.Isp * p.g0);
 
 dstate = [vx; vy; ax; ay; mdot];

@@ -12,4 +12,8 @@ p.T_max_boostback = p.nEnginesBoostback * p.T_engine_max;
 p.T_min_boostback = p.throttle_min * p.T_max_boostback;
 
 p.m0 = p.dryMass + p.propMassAtSeparation;
+
+if isfield(p, 'aero')
+    p.aero.A_ref = pi / 4 * p.aero.diameter^2;   % [m^2]
+end
 end

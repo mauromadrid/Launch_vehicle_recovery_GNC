@@ -170,11 +170,12 @@ runtests('tests')
 - Flat-Earth, constant-gravity approximation (`g = g0`). Reasonable for
   the altitude range involved here; revisit with an inverse-square or
   WGS84 gravity model if the trajectory range grows significantly.
-- No aerodynamic forces yet (added in Phase 4). In vacuum the coast
-  reaches landing-burn ignition altitude at ~1.8 km/s, which the landing
-  propellant reserve (`p.landingPropReserve`, sized assuming drag brings
-  the stage near terminal velocity) cannot cancel — expected until
-  Phase 4.
+- Drag only (no lift, zero angle of attack), in the plant: COESA 1976
+  atmosphere and an **illustrative** CD(Mach) curve for a stage descending
+  engine-first (`dragAcceleration.m`; a native-block `Drag` subsystem with
+  the Aerospace Blockset COESA block in Simulink). `p.aero.dragEnabled =
+  false` gives the vacuum plant. The guidance still plans in vacuum; see
+  `sim/study_drag_effect.m` for what drag does to that plan.
 - All parameters in `vehicleParams.m` are illustrative, order-of-
   magnitude values for a small reusable first stage — not sourced from
   any specific real vehicle's performance data. Refine and justify them

@@ -11,7 +11,12 @@ if ~bdIsLoaded(mdl)
     load_system(fullfile(projRoot, 'simulink', [mdl '.slx']));
 end
 
+% The COESA block warns once per run that it extrapolates above 84.85 km.
+% That's expected: the altitude fed to it is clamped at p.atmo.maxAltitude
+% (see vehicleParams), where the extrapolated density makes drag ~0.
+wState = warning('off', 'aeroblks:aeroblkcoesa:AltMsg');
 simOut = sim(mdl);
+warning(wState);
 simlog = simOut.get('simlog');
 t = simlog.time;
 data = simlog.signals.values; % columns: x y vx vy m T_cmd theta_cmd
