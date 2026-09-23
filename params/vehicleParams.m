@@ -22,8 +22,14 @@ p.T_min = p.throttle_min * p.T_max;
 
 % --- Mass properties (at stage separation) ---
 p.dryMass              = 4000;  % [kg] structural/dry mass of the stage
-p.propMassAtSeparation = 3000;  % [kg] propellant remaining for
-                                  %      boostback + coast + landing
+p.propMassAtSeparation = 8000;  % [kg] propellant remaining for
+                                  %      boostback + coast + landing.
+                                  %      Sized for the boostback: from
+                                  %      this separation state the burn
+                                  %      needs ~1.85 km/s impulsive dv
+                                  %      (more with gravity losses), so
+                                  %      the original 3000 kg (1.55 km/s
+                                  %      total) made it infeasible.
 p.m0 = p.dryMass + p.propMassAtSeparation;
 
 % --- Separation state (illustrative) ---
@@ -51,4 +57,15 @@ p.maxTiltAngle    = deg2rad(20);  % [rad] max thrust pointing angle from
                                     %       the vehicle's vertical axis
 p.glideSlopeAngle = deg2rad(10);  % [rad] min angle of the glide-slope
                                     %       cone above the landing site
+
+% --- Boostback guidance (Phase 2) ---
+p.boostbackNodes     = 40;    % ZOH discretization intervals over the burn
+p.landingPropReserve = 800;   % [kg] propellant the boostback must leave
+                                %      for the landing burn (floor on the
+                                %      burn-cutoff mass above dryMass).
+                                %      ~500 m/s of dv at dry mass: sized
+                                %      for a landing from near-terminal
+                                %      velocity, i.e. assumes Phase 4
+                                %      drag. In vacuum the coast reaches
+                                %      ignition altitude at ~1.3 km/s.
 end

@@ -16,13 +16,22 @@ eventually a Model-in-the-Loop -> Simulink implementation.
 
 ## Status
 
-**Phase 1 (in progress):** planar 3DOF point-mass dynamics for the full
-boostback -> coast -> landing sequence, validated open-loop with
-placeholder (non-optimized) thrust profiles.
+**Phase 1 (done):** planar 3DOF point-mass dynamics for the full
+boostback -> coast -> landing sequence.
+
+**Phase 2 (done):** minimum-fuel boostback guidance as a lossless-
+convexified SOCP solved with `coneprog` (`guidance/boostback_guidance.m`).
+The burn targets a fixed-duration ballistic coast that ends at the
+landing-burn ignition point; flown through the nonlinear EOM (MATLAB and
+Simulink), the vehicle arrives there within ~0.5 m after a ~97 s burn
+and ~205 s coast.
+
+**Phase 3 (next):** convex landing-burn guidance. The landing burn is
+still a placeholder, so touchdown is still hard.
 
 ## Planned phases
 
-1. **3DOF dynamics** (this phase) — point-mass planar dynamics, no
+1. **3DOF dynamics** — point-mass planar dynamics, no
    aerodynamics, validated with placeholder guidance.
 2. **Convex boostback guidance** — minimum-fuel burn solved as a
    second-order cone program (SOCP) via `coneprog`.
@@ -43,7 +52,7 @@ placeholder (non-optimized) thrust profiles.
 ```
 params/     vehicle & environment parameters (vehicleParams.m)
 dynamics/   equations of motion and ODE event functions (MATLAB prototype)
-guidance/   guidance algorithms (currently placeholders; Phases 2-3)
+guidance/   guidance algorithms (convex boostback; landing placeholder)
 sim/        top-level MATLAB script that runs the .m-only simulation
 simulink/   the Simulink model, built from native blocks, plus the
             script that (re)generates it and a results-plotting script
@@ -95,17 +104,15 @@ cd sim
 run_open_loop_demo
 ```
 
-Both the MATLAB and Simulink versions run the boostback/coast/landing
-sequence with fixed, hand-picked thrust profiles (see
-`guidance/*_guidance.m`) purely to validate the dynamics, mass
-depletion, and phase transitions — neither hits the landing target
-softly yet. That is the job of Phases 2 and 3.
+Both the MATLAB and Simulink versions fly the convex boostback profile
+open-loop (as a zero-order-hold thrust-acceleration and angle schedule,
+`T = aCmd(t) * m`), coast to landing-burn ignition altitude, then run the
+placeholder landing burn — so neither lands softly yet (Phase 3).
 
 ## Running the tests
 
 ```matlab
-cd tests
-runtests('test_threeDOF_EOM')
+runtests('tests')
 ```
 
 ## Modeling assumptions (Phase 1)
@@ -113,7 +120,11 @@ runtests('test_threeDOF_EOM')
 - Flat-Earth, constant-gravity approximation (`g = g0`). Reasonable for
   the altitude range involved here; revisit with an inverse-square or
   WGS84 gravity model if the trajectory range grows significantly.
-- No aerodynamic forces yet (added in Phase 4).
+- No aerodynamic forces yet (added in Phase 4). In vacuum the coast
+  reaches landing-burn ignition altitude at ~1.6 km/s, which the landing
+  propellant reserve (`p.landingPropReserve`, sized assuming drag brings
+  the stage near terminal velocity) cannot cancel — expected until
+  Phase 4.
 - All parameters in `vehicleParams.m` are illustrative, order-of-
   magnitude values for a small reusable first stage — not sourced from
   any specific real vehicle's performance data. Refine and justify them

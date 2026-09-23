@@ -13,15 +13,18 @@
 %                                  mirrors dynamics/threeDOF_EOM.m
 %   GuidancePhaseLogic subsystem - boostback / coast / landing phase
 %                                  sequencing via Switch blocks, driven
-%                                  by elapsed time and altitude
+%                                  by elapsed time and altitude. The
+%                                  boostback command is the convex-
+%                                  guidance ZOH profile (1-D Lookup
+%                                  Tables on time, flat interpolation),
+%                                  flown as T = aCmd(t) * m
 %   Top level                    - wiring, workspace logging (LogOut),
 %                                  and a Stop-Simulation block that
 %                                  halts the run at ground contact
 %
-% NOTE: GuidancePhaseLogic is currently a fixed, non-optimized
-% placeholder (see guidance/*_guidance.m). Replacing it with the real
-% convex-optimization-based guidance (Phases 2-3) is the next step --
-% expect a hard "landing" until then.
+% NOTE: the landing burn is still a fixed, non-optimized placeholder
+% (guidance/pdg_landing_guidance.m, Phase 3) -- expect a hard "landing"
+% until then. The boostback is the real convex solve (Phase 2).
 
 projRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(genpath(projRoot));
@@ -117,6 +120,7 @@ guidPath = [mdl '/GuidancePhaseLogic'];
 add_block('simulink/Ports & Subsystems/Subsystem', guidPath);
 try, delete_line(guidPath, 'In1/1', 'Out1/1'); catch, end
 set_param([guidPath '/In1'], 'Name', 'y_in');
+add_block('simulink/Sources/In1', [guidPath '/m_in'], 'Port', '2');
 set_param([guidPath '/Out1'], 'Name', 'T_cmd');
 add_block('simulink/Sinks/Out1', [guidPath '/theta_cmd'], 'Port', '2');
 
@@ -127,8 +131,15 @@ add_block('simulink/Sources/Constant', [guidPath '/BoostbackDur'], 'Value', 'bb.
 add_block('simulink/Logic and Bit Operations/Relational Operator', [guidPath '/IsBelowIgnite'], 'Operator', '<=');
 add_block('simulink/Sources/Constant', [guidPath '/IgniteAlt'], 'Value', 'p.landingIgniteAltitude');
 
-add_block('simulink/Sources/Constant', [guidPath '/BB_T'], 'Value', 'bb.T_const');
-add_block('simulink/Sources/Constant', [guidPath '/BB_Theta'], 'Value', 'bb.theta_const');
+% Boostback: piecewise-constant (ZOH) profile from the convex solve.
+% 'Flat' interpolation holds each node's value until the next breakpoint.
+add_block('simulink/Lookup Tables/1-D Lookup Table', [guidPath '/BB_aCmd'], ...
+    'Table', 'bb.aCmd', 'BreakpointsForDimension1', 'bb.t', ...
+    'InterpMethod', 'Flat', 'ExtrapMethod', 'Clip');
+add_block('simulink/Lookup Tables/1-D Lookup Table', [guidPath '/BB_Theta'], ...
+    'Table', 'bb.theta', 'BreakpointsForDimension1', 'bb.t', ...
+    'InterpMethod', 'Flat', 'ExtrapMethod', 'Clip');
+add_block('simulink/Math Operations/Product', [guidPath '/BB_T']); % T = aCmd * m
 add_block('simulink/Sources/Constant', [guidPath '/LD_T'], 'Value', 'ld.T_const');
 add_block('simulink/Sources/Constant', [guidPath '/LD_Theta'], 'Value', 'ld.theta_const');
 add_block('simulink/Sources/Constant', [guidPath '/ZeroT'], 'Value', '0');
@@ -140,6 +151,10 @@ add_block('simulink/Signal Routing/Switch', [guidPath '/OuterSwitchT'],     'Cri
 add_block('simulink/Signal Routing/Switch', [guidPath '/OuterSwitchTheta'], 'Criteria', 'u2 >= Threshold', 'Threshold', '0.5');
 
 add_line(guidPath, 'Clock/1', 'IsBoostback/1');
+add_line(guidPath, 'Clock/1', 'BB_aCmd/1');
+add_line(guidPath, 'Clock/1', 'BB_Theta/1');
+add_line(guidPath, 'BB_aCmd/1', 'BB_T/1');
+add_line(guidPath, 'm_in/1', 'BB_T/2');
 add_line(guidPath, 'BoostbackDur/1', 'IsBoostback/2');
 
 add_line(guidPath, 'y_in/1', 'IsBelowIgnite/1');
@@ -170,6 +185,7 @@ Simulink.BlockDiagram.arrangeSystem(guidPath);
 add_line(mdl, 'GuidancePhaseLogic/1', 'VehicleDynamics/1'); % T_cmd    -> T_in
 add_line(mdl, 'GuidancePhaseLogic/2', 'VehicleDynamics/2'); % theta_cmd-> theta_in
 add_line(mdl, 'VehicleDynamics/2', 'GuidancePhaseLogic/1'); % y_out    -> y_in
+add_line(mdl, 'VehicleDynamics/5', 'GuidancePhaseLogic/2'); % m_out    -> m_in
 
 add_block('simulink/Signal Routing/Mux', [mdl '/LogMux'], 'Inputs', '7');
 add_line(mdl, 'VehicleDynamics/1', 'LogMux/1');
@@ -201,7 +217,7 @@ add_line(mdl, 'TimeGuard/1', 'StopAND/2');
 add_line(mdl, 'StopAND/1', 'StopSim/1');
 
 %% ---- Model configuration ----
-set_param(mdl, 'Solver', 'ode45', 'RelTol', '1e-9', 'AbsTol', '1e-9', 'StopTime', '250');
+set_param(mdl, 'Solver', 'ode45', 'RelTol', '1e-9', 'AbsTol', '1e-9', 'StopTime', '600');
 
 % Self-contained: (re)derive p, bb, ld whenever the model is simulated,
 % regardless of what folder MATLAB's current working directory is.

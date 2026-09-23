@@ -19,7 +19,7 @@ roles (Munich area; motivating example: Isar Aerospace's working-student GNC
 postings, which explicitly mention "GNC algorithms for reusability scenarios,
 trajectory optimization, Monte Carlo analysis, MATLAB/Simulink").
 
-## Current state (Phase 1 complete)
+## Current state (Phase 2 complete — see "Phase 2 as implemented" below)
 
 Two parallel implementations of the same Phase 1 physics exist, deliberately:
 
@@ -35,14 +35,14 @@ Two parallel implementations of the same Phase 1 physics exist, deliberately:
   truth for the diagram — re-run it to rebuild, don't hand-edit the `.slx`
   and let the two drift apart).
 
-Both currently use **placeholder, non-optimized guidance**
-(`guidance/boostback_guidance.m` and `guidance/pdg_landing_guidance.m` return
-fixed, hand-picked thrust profiles) purely to validate dynamics, mass
-depletion, and phase transitions. Both were run successfully: the vehicle
-correctly integrates through boostback → coast → landing-burn-ignition →
-touchdown-detection, but lands hard, because the guidance is not yet real.
-**Replacing the boostback placeholder with a real convex solve is the next
-task** (see "Phase 2" below).
+Both fly the **real convex boostback guidance** (Phase 2, done) and then
+coast to landing-burn ignition altitude, arriving within ~0.5 m of the
+aimed-for point. The landing burn (`guidance/pdg_landing_guidance.m`) is
+still a **placeholder** fixed profile, so touchdown is hard. **Phase 3
+(convex landing guidance) is the next task** — but read the "vacuum
+consequence" note in "Phase 2 as implemented" first.
+
+The project is a git repository (initialized at the Phase 1 baseline).
 
 Params, including vehicle constants, are in `params/vehicleParams.m` — all
 values there are illustrative/order-of-magnitude, not sourced from any real
@@ -85,10 +85,46 @@ explicit trade-off (more build effort, more legible/idiomatic Simulink
 model) made because the point of the project is to demonstrate Simulink
 fluency specifically, not just algorithmic correctness.
 
-## Phase 2 (next task): Boostback guidance formulation
+## Phase 2 as implemented (done)
 
-This is the immediate implementation target: replace the placeholder logic
-in `guidance/boostback_guidance.m` with a real convex solve.
+The design below was implemented as agreed in `guidance/boostback_guidance.m`
++ `guidance/estimate_coast_duration.m`, tested by
+`tests/test_boostback_guidance.m`. Details and findings worth remembering:
+
+- **Variables**: Açıkmeşe & Ploen change of variables (u = T/m, σ = Γ/m,
+  z = ln(m/m0)) so dynamics are linear; exact ZOH discretization on u;
+  thrust bounds via Taylor expansion of e^-z about the max-thrust mass
+  profile. Solved solver-based (explicit matrices + `secondordercone`),
+  nondimensionalized to km / g units. Fixed-structure on purpose, with the
+  later shrinking-horizon replanning / code generation in mind.
+- **Burn duration** is not in the convex problem: outer 1D search (20-point
+  grid + `fminbnd`), one SOCP per evaluation (~2 s total).
+- **Pointing constraint**: `p.maxTiltAngle` is applied about a reference axis
+  n = direction of the impulsive Δv into the coast arc, not about vertical —
+  a vertical cone would make boostback impossible. Phase 3 uses n = up.
+- **Output / how it's flown**: ZOH profile of thrust-acceleration magnitude
+  `bb.aCmd` and angle `bb.theta` at node times `bb.t`, flown as
+  T = aCmd·m with the plant's actual mass (exact replay of the plan). In
+  Simulink: 1-D Lookup Tables (flat interpolation) on Clock, times m_in.
+- **Result**: losslessness gap ~5e-7; nonlinear replay reaches the ignition
+  point within ~0.5 m (both MATLAB and Simulink). `coneprog`'s default
+  tolerance leaves ~0.2 m on the affine constraint; tightening
+  `ConstraintTolerance` to 1e-9 makes it stall (all solves "infeasible").
+- **Params changed**: the original 3000 kg propellant was infeasible (needs
+  ~1.85 km/s impulsive; had 1.55 km/s total). Now 8000 kg, plus
+  `p.landingPropReserve = 800` kg and `p.boostbackNodes = 40`.
+- **T_coast estimate quality**: at 8000 kg it's within ~0.2% of the best
+  fixed T_coast. But at low T/W (e.g. 10000 kg, T/W≈1.46) the burn gets long,
+  the separation-position approximation breaks down, and the estimated
+  T_coast (205 s) is outright infeasible while 180 s works. If this bites
+  (e.g. Monte Carlo dispersions), add an outer search / fallback over
+  T_coast, or estimate it from a predicted cutoff position.
+- **Vacuum consequence for Phase 3**: without drag the coast reaches the
+  3000 m ignition altitude at ~1.6 km/s — no landing burn from there can be
+  feasible. Phase 3 needs either Phase 4 drag first, or a much higher
+  ignition point for a vacuum-only demo. Decide before starting Phase 3.
+
+## Phase 2 design (as agreed before implementation): Boostback guidance formulation
 
 ### Goal
 
