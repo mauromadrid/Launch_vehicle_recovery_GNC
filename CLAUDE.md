@@ -249,6 +249,35 @@ constraint (stay inside a cone above the landing site so the trajectory
 doesn't dive into terrain early). Terminal condition: zero (or near-zero)
 position and velocity error at the pad.
 
+### Monte Carlo framework (built before Phase 3, reuse it)
+
+`montecarlo/` (see README table): catalog → select → sample (seeded LHS) →
+apply → run(caseFcn) → analyze. **Only the case function is phase-specific**
+(`mc_case_boostback` now; write `mc_case_landing` / a full-sequence case
+later). Decisions and why:
+
+- Derived params live in `params/deriveParams.m` and are recomputed after
+  every dispersion — otherwise dispersing dryMass/thrust would leave m0 and
+  the thrust bounds stale.
+- Separation velocity is dispersed in polar form ("speed", "fpa"), the way
+  trajectory dispersions are usually specified. Position is held nominal
+  unless "sep.x"/"sep.y" are selected — real ascent dispersions correlate
+  these (a lofted ascent separates higher); correlated sampling isn't
+  implemented yet.
+- Default distributions are uniform = sensitivity/feasibility *mapping*.
+  Phase 5 statistics should switch rows to "normal" (truncated at ±3σ).
+- LHS so a few hundred samples cover each variable's range evenly.
+- Infeasible is an *outcome* (feasible=false), not an error; genuine
+  exceptions are recorded per case (status/message) and don't stop a run.
+- No Parallel Computing Toolbox installed → serial loop. Long runs: launch
+  a separate `matlab -batch "run('montecarlo/run_mc_boostback.m')"` process
+  and load the saved .mat, so the interactive session isn't blocked.
+  Infeasible cases cost ~12 s each (the T_coast fallback scan).
+- Simulink-based cases (later): the model's InitFcn currently rebuilds `p`
+  from vehicleParams(), which would discard dispersions. A Simulink case
+  function needs InitFcn to accept an externally supplied `p` (e.g. via
+  Simulink.SimulationInput variables) first.
+
 ### Phase 4: Atmosphere & aerodynamics (drag)
 
 Drag is a first-order effect at low altitude/high speed, not a rounding

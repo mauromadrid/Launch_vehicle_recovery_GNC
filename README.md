@@ -133,11 +133,36 @@ Runs the boostback guidance with Falcon Heavy side-booster parameters
 envelope of BECO states, checking feasibility is monotonic in propellant and
 reporting the minimum boostback propellant and burn duration.
 
+## Monte Carlo / sensitivity studies
+
+```matlab
+run montecarlo/run_mc_boostback.m
+```
+
+A phase-agnostic framework in `montecarlo/`:
+
+| Step | Function | Role |
+|---|---|---|
+| Catalog | `mc_dispersion_catalog(p)` | Every variable that *can* be dispersed, with default ranges around `p`'s nominal values |
+| Select | `mc_select(catalog, names)` | Which variables *are* dispersed in this study |
+| Sample | `mc_generate_samples(spec, N, Seed=, Method=)` | N input sets: seeded Latin hypercube (or plain random); uniform or truncated-normal |
+| Apply | `mc_apply_sample(p, row)` | One case's parameter set (handles speed/flight-path angle, re-derives `m0` and thrust bounds) |
+| Run | `mc_run(p, samples, caseFcn)` | One case per sample; errors captured per case; inputs + metrics in one table |
+| Case | `mc_case_boostback(p)` | The only phase-specific part: guidance + nonlinear replay → metrics |
+| Analyse | `mc_analyze(results, inputs, outputs)` | Summary stats, input-space map, rank-correlation sensitivity heatmap, histograms |
+
+To study other variables, change `vars` in the run script (any name from the
+catalog, or append a catalog row for any other numeric field of `p`). Later
+phases reuse everything except the case function. Results are saved to
+`results/` (not version-controlled).
+
 ## Running the tests
 
 ```matlab
 runtests('tests')
 ```
+
+(`test_boostback_guidance` takes ~20 s; the rest are fast.)
 
 ## Modeling assumptions (Phase 1)
 

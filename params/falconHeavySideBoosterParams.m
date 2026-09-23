@@ -30,16 +30,13 @@ p.T_engine_max      = 981e3;    % [N] Merlin 1D vacuum
 p.throttle_min      = 419 / 816;
 p.nEnginesBoostback = 3;
 p.nEnginesLanding   = 1;
-p.T_max = p.nEnginesLanding * p.T_engine_max;
-p.T_min = p.throttle_min * p.T_max;
-p.T_max_boostback = p.nEnginesBoostback * p.T_engine_max;
-p.T_min_boostback = p.throttle_min * p.T_max_boostback;
 
 p.dryMass = 22.2e3;
 p.propMassAtSeparation = propMassAtSeparation;
-p.m0 = p.dryMass + p.propMassAtSeparation;
 p.landingPropReserve = 0;      % caller decides; 0 = boostback need alone
 
 p.sep = sep;
 p.target.x = 0;
+
+p = deriveParams(p);
 end

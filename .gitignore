@@ -8,3 +8,6 @@ slprj/
 *_ert_rtw/
 codegen/
 resources/project/*.bak
+
+# Monte Carlo / analysis outputs
+results/

@@ -18,26 +18,13 @@ state0 = [p.sep.x; p.sep.y; p.sep.vx; p.sep.vy; p.m0];
 
 odeOpts = odeset('RelTol', 1e-9, 'AbsTol', 1e-9, 'Events', @touchdownEvent);
 
-%% Phase A: Boostback burn (convex guidance, flown one ZOH interval at a time)
+%% Phases A + B: Boostback burn (convex guidance) and ballistic coast down
+%% to landing-burn ignition altitude
 bb = boostback_guidance(state0, p);
-N = numel(bb.t);
-dtNode = bb.duration / N;
-tA = 0; yA = state0'; kA = 1; % kA: ZOH interval index of each sample
-for k = 1:N
-    thrustFcn_A = @(t, s) deal(bb.aCmd(k) * s(5), bb.theta(k));
-    [tk, yk] = ode45(@(t,s) threeDOF_EOM(t, s, thrustFcn_A, p), ...
-                     [(k-1)*dtNode, k*dtNode], yA(end,:)', odeOpts);
-    tA = [tA; tk(2:end)];   %#ok<AGROW>
-    yA = [yA; yk(2:end,:)]; %#ok<AGROW>
-    kA = [kA; repmat(k, numel(tk) - 1, 1)]; %#ok<AGROW>
-end
-
-%% Phase B: Ballistic coast (zero thrust) down to landing-burn ignition altitude
-thrustFcn_B = @(t, s) deal(0, 0);
-coastOpts = odeset(odeOpts, 'Events', @(t, s) altitudeEvent(t, s, p.landingIgniteAltitude));
+traj = simulate_boostback_coast(state0, bb, p);
+tA = traj.tA; yA = traj.XA; kA = traj.kA; % kA: ZOH interval index of each sample
+tB = traj.tB; yB = traj.XB;
 stateB0 = yA(end,:)';
-[tB, yB] = ode45(@(t,s) threeDOF_EOM(t, s, thrustFcn_B, p), ...
-                  [0, 1000], stateB0, coastOpts);
 
 %% Phase C: Landing burn
 stateC0 = yB(end,:)';

@@ -18,12 +18,7 @@ p.nEnginesLanding   = 1;     % number of engines used for the landing burn
 p.nEnginesBoostback = 1;     % number of engines used for the boostback burn
 p.T_engine_max    = 200e3;   % [N] max thrust per engine
 p.throttle_min    = 0.40;    % minimum throttle fraction (deep-throttling limit)
-% Thrust bounds per burn: an engine that is lit can't throttle below
-% throttle_min, so the lower bound scales with the engine count too.
-p.T_max = p.nEnginesLanding * p.T_engine_max;       % landing burn
-p.T_min = p.throttle_min * p.T_max;
-p.T_max_boostback = p.nEnginesBoostback * p.T_engine_max;
-p.T_min_boostback = p.throttle_min * p.T_max_boostback;
+% T_min/T_max (landing) and T_min/T_max_boostback: see deriveParams()
 
 % --- Mass properties (at stage separation) ---
 p.dryMass              = 4000;  % [kg] structural/dry mass of the stage
@@ -35,7 +30,7 @@ p.propMassAtSeparation = 8000;  % [kg] propellant remaining for
                                   %      (more with gravity losses), so
                                   %      the original 3000 kg (1.55 km/s
                                   %      total) made it infeasible.
-p.m0 = p.dryMass + p.propMassAtSeparation;
+% p.m0 (mass at separation): see deriveParams()
 
 % --- Separation state (illustrative) ---
 % Planar frame: x = downrange distance from the launch site, y = altitude.
@@ -87,4 +82,6 @@ p.landingPropReserve = 800;   % [kg] propellant the boostback must leave
                                 %      velocity, i.e. assumes Phase 4
                                 %      drag. In vacuum the coast reaches
                                 %      ignition altitude at ~1.6 km/s.
+
+p = deriveParams(p);
 end
