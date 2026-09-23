@@ -97,7 +97,7 @@ The design below was implemented as agreed in `guidance/boostback_guidance.m`
   profile. Solved solver-based (explicit matrices + `secondordercone`),
   nondimensionalized to km / g units. Fixed-structure on purpose, with the
   later shrinking-horizon replanning / code generation in mind.
-- **Burn duration** is not in the convex problem: outer 1D search (20-point
+- **Burn duration** is not in the convex problem: outer 1D search (25-point geometric
   grid + `fminbnd`), one SOCP per evaluation (~2 s total).
 - **Pointing constraint**: boostback uses its own `p.boostbackMaxDeviation`
   (default 90°, a half-space) about n = direction of the impulsive Δv into
