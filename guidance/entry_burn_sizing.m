@@ -8,9 +8,10 @@ function eb = entry_burn_sizing(state, p)
 %   Numerical predictor-corrector, run once at burn start:
 %     predict  - fly the burn (full thrust, retrograde) + the unpowered
 %                descent to landing-burn ignition altitude through the
-%                GUIDANCE model: exponential atmosphere (p.atmo.rho0, H),
-%                constant speed of sound, the CD(Mach) table. Deliberately
-%                simpler than the plant (COESA), as onboard models are.
+%                GUIDANCE model (guidance_model_eom: exponential
+%                atmosphere, constant speed of sound, the CD(Mach) table).
+%                Deliberately simpler than the plant (COESA), as onboard
+%                models are.
 %     correct  - for each active limit, root-find (fzero) the smallest
 %                delta-v whose predicted metric meets it:
 %                  peak dynamic pressure        <= p.entry.qMax
@@ -36,7 +37,8 @@ function eb = entry_burn_sizing(state, p)
 %     binding     - which limit set dv ("qMax", "heatMaxRel",
 %                   "vIgnitionMax", or "none")
 %     dvByLimit   - struct: dv each limit alone would need (NaN = can't)
-%     predicted   - predictor metrics at the chosen dv
+%     predicted   - predictor metrics at the chosen dv (qPeak, heatPeak,
+%                   heatLoad, vIgnition, final = state at ignition)
 %     noBurn      - predictor metrics with dv = 0
 
 c = p.Isp * p.g0;
@@ -107,10 +109,10 @@ opts = odeset('RelTol', 1e-7, 'AbsTol', 1e-6, 'MaxStep', 0.5);
 t = 0; X = state(:)';
 if dv > 0
     burnOpts = odeset(opts, 'Events', @(~, s) massEvent(s, mCut));
-    [t, X] = ode45(@(~, s) eomGuidance(s, p.T_max_entry, p), [0 600], state, burnOpts);
+    [t, X] = ode45(@(~, s) guidance_model_eom(s, p.T_max_entry, p), [0 600], state, burnOpts);
 end
 coastOpts = odeset(opts, 'Events', @(~, s) altEvent(s, p.landingIgniteAltitude));
-[t2, X2] = ode45(@(~, s) eomGuidance(s, 0, p), t(end) + [0 1200], X(end,:)', coastOpts);
+[t2, X2] = ode45(@(~, s) guidance_model_eom(s, 0, p), t(end) + [0 1200], X(end,:)', coastOpts);
 t = [t; t2(2:end)]; X = [X; X2(2:end,:)];
 
 rho = p.atmo.rho0 * exp(-max(X(:,2), 0) / p.atmo.H);
@@ -120,19 +122,7 @@ out.qPeak     = max(0.5 * rho .* V.^2);
 out.heatPeak  = max(heat);
 out.heatLoad  = trapz(t, heat);
 out.vIgnition = V(end);
-end
-
-function ds = eomGuidance(s, T, p)
-% Point mass, retrograde thrust T, gravity, drag with the guidance model.
-v = s(3:4); V = norm(v); m = s(5);
-rho = p.atmo.rho0 * exp(-max(s(2), 0) / p.atmo.H);
-CD = interp1(p.aero.mach, p.aero.CD, min(V / p.atmo.soundSpeed, p.aero.mach(end)));
-k = 0.5 * rho * V * CD * p.aero.A_ref / m;
-aThrust = [0; 0];
-if T > 0 && V > 0
-    aThrust = -(T / m) * v / V;
-end
-ds = [v; aThrust + [0; -p.g] - k * v; -T / (p.Isp * p.g0)];
+out.final     = X(end,:)';         % predicted state at ignition altitude
 end
 
 function [value, isterminal, direction] = massEvent(s, mCut)

@@ -92,10 +92,12 @@ p.atmo.soundSpeed = 300;         % [m/s] guidance model's constant speed of
 % burn start, from the measured state: the minimum delta-v for which the
 % guidance model predicts every active limit is met (entry_burn_sizing).
 % Limits are ILLUSTRATIVE; set a limit to Inf to deactivate it.
-p.entry.enabled       = false;   % off until the Simulink model has it too
+p.entry.enabled       = true;
 p.entry.startAltitude = 60e3;    % [m]
 p.nEnginesEntry       = 1;       % (T_max_entry: deriveParams)
-p.entry.qMax          = 60e3;    % [Pa]  peak dynamic pressure after the burn
+p.entry.qMax          = 150e3;   % [Pa]  peak dynamic pressure after the burn
+                                 %       (reachable for RTLS; RTLS can't get
+                                 %       below ~104 kPa with this vehicle)
 p.entry.heatMaxRel    = Inf;     % [-]   peak heating index sqrt(rho)*V^3,
                                  %       relative to the same descent with
                                  %       no entry burn (e.g. 0.5 = halve it)

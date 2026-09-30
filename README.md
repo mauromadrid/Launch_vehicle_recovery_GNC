@@ -143,8 +143,13 @@ study_entry_burn(p)     % entry-burn cost vs q / heating limits and start altitu
 
 The entry burn (`guidance/entry_burn_sizing.m`) is sized online at a fixed
 start altitude: the minimum retrograde Δv whose predicted descent (guidance
-model: exponential atmosphere) meets every active limit. It's off by default
-(`p.entry.enabled`) until the Simulink model includes it.
+model: exponential atmosphere) meets every active limit (default: peak
+dynamic pressure 150 kPa). In Simulink it's a MATLAB Function block in a
+Triggered Subsystem that fires when descending through the start altitude.
+
+The boostback is aimed by `guidance/boostback_targeting.m`: an aim-point
+bias loop around the convex solve, using the guidance model to predict
+where drag and the entry burn will move the arrival point.
 
 ## Monte Carlo / sensitivity studies
 

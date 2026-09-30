@@ -24,13 +24,24 @@ data = simlog.signals.values; % columns: x y vx vy m T_cmd theta_cmd
 fprintf('Simulation stopped at t = %.2f s\n', t(end));
 fprintf('Final [x y vx vy m]: '); disp(data(end,1:5));
 
+% p and bb exactly as the model's InitFcn built them for this run (it
+% runs in the base workspace), rather than re-solving the targeting.
+p  = evalin('base', 'p');
+bb = evalin('base', 'bb');
+fprintf('Boostback aim bias %.0f m (%d targeting iterations)\n', bb.aimBias, bb.iterations);
+fprintf('Ignition point: x = %.1f m from the landing site, speed %.0f m/s\n', ...
+        data(find(t > bb.duration & data(:,2) <= p.landingIgniteAltitude, 1), 1) - p.target.x, ...
+        norm(data(find(t > bb.duration & data(:,2) <= p.landingIgniteAltitude, 1), 3:4)));
+
 % Phase event times: boostback cutoff is the scheduled burn end; landing
-% ignition is the first sample after it at/below the ignition altitude.
-p  = vehicleParams();
-bb = boostback_guidance([], p);
+% ignition is the first sample after it at/below the ignition altitude;
+% the entry burn is any thrust in between.
 ev.tCutoff = bb.duration;
 iIgn = find(t > bb.duration & data(:,2) <= p.landingIgniteAltitude, 1);
 if isempty(iIgn), ev.tIgnite = NaN; else, ev.tIgnite = t(iIgn); end
+entryOn = t > bb.duration & t < ev.tIgnite & data(:,6) > 0;
+ev.tEntry = [];
+if any(entryOn), ev.tEntry = [t(find(entryOn, 1)) t(find(entryOn, 1, 'last'))]; end
 
 plot_return_trajectory(t, data(:,1:5), data(:,6), data(:,7), p, ev, ...
                        'Booster Return - Simulink Model');

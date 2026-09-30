@@ -22,6 +22,8 @@ arguments
     opts.Plot (1,1) logical = true
 end
 
+% Drag only: no entry burn in either case (study_entry_burn covers that)
+p.entry.enabled = false;
 pVac = p;  pVac.aero.dragEnabled = false;
 pDrag = p; pDrag.aero.dragEnabled = true;
 

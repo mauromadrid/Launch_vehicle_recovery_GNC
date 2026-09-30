@@ -20,7 +20,7 @@ odeOpts = odeset('RelTol', 1e-9, 'AbsTol', 1e-9, 'Events', @touchdownEvent);
 
 %% Phases A + B: Boostback burn (convex guidance) and ballistic coast down
 %% to landing-burn ignition altitude
-bb = boostback_guidance(state0, p);
+bb = boostback_targeting(state0, p);   % convex boostback, aim biased for drag + entry burn
 traj = simulate_boostback_coast(state0, bb, p);
 tA = traj.tA; yA = traj.XA; kA = traj.kA; % kA: ZOH interval index of each sample
 tB = traj.tB; yB = traj.XB;

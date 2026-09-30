@@ -19,7 +19,11 @@
 %                                  boostback command is the convex-
 %                                  guidance ZOH profile (1-D Lookup
 %                                  Tables on time, flat interpolation),
-%                                  flown as T = aCmd(t) * m
+%                                  flown as T = aCmd(t) * m, aimed by
+%                                  boostback_targeting (drag + entry burn
+%                                  bias). Entry burn: sized once at its
+%                                  start altitude by a MATLAB Function
+%                                  block in a Triggered Subsystem
 %   Top level                    - wiring, workspace logging (LogOut),
 %                                  and a Stop-Simulation block that
 %                                  halts the run at ground contact
@@ -31,7 +35,7 @@
 projRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(genpath(projRoot));
 p  = vehicleParams();
-bb = boostback_guidance([], p);
+bb = boostback_targeting([], p);
 ld = pdg_landing_guidance([], p);
 
 simDir = fullfile(projRoot, 'simulink');
@@ -186,6 +190,9 @@ add_block('simulink/Ports & Subsystems/Subsystem', guidPath);
 try, delete_line(guidPath, 'In1/1', 'Out1/1'); catch, end
 set_param([guidPath '/In1'], 'Name', 'y_in');
 add_block('simulink/Sources/In1', [guidPath '/m_in'], 'Port', '2');
+add_block('simulink/Sources/In1', [guidPath '/x_in'],  'Port', '3');
+add_block('simulink/Sources/In1', [guidPath '/vx_in'], 'Port', '4');
+add_block('simulink/Sources/In1', [guidPath '/vy_in'], 'Port', '5');
 set_param([guidPath '/Out1'], 'Name', 'T_cmd');
 add_block('simulink/Sinks/Out1', [guidPath '/theta_cmd'], 'Port', '2');
 
@@ -225,13 +232,90 @@ add_line(guidPath, 'BoostbackDur/1', 'IsBoostback/2');
 add_line(guidPath, 'y_in/1', 'IsBelowIgnite/1');
 add_line(guidPath, 'IgniteAlt/1', 'IsBelowIgnite/2');
 
+% ---- Entry burn ----
+% Sized once, when descending through p.entry.startAltitude: a Triggered
+% Subsystem (falling edge of y - startAltitude, located by zero-crossing
+% detection) runs a MATLAB Function block that calls the guidance's
+% sizing (entry_burn_sizing, via entry_cutoff_mass) extrinsically on the
+% measured state and holds the resulting cutoff mass. The burn is then
+% native blocks: active while m > mCutoff, full thrust, retrograde.
+add_block('simulink/Sources/Constant', [guidPath '/EntryStartAlt'], 'Value', 'p.entry.startAltitude');
+add_block('simulink/Math Operations/Sum', [guidPath '/AboveEntryStart'], 'Inputs', '+-');
+add_block('simulink/Signal Routing/Mux', [guidPath '/StateMux'], 'Inputs', '5');
+
+trigPath = [guidPath '/EntryBurnSizing'];
+add_block('simulink/Ports & Subsystems/Triggered Subsystem', trigPath);
+try, delete_line(trigPath, 'In1/1', 'Out1/1'); catch, end
+set_param([trigPath '/Trigger'], 'TriggerType', 'falling');
+set_param([trigPath '/In1'], 'Name', 'state');
+set_param([trigPath '/Out1'], 'Name', 'mCutoff');
+add_block('simulink/Sinks/Out1', [trigPath '/sized'], 'Port', '2');
+fcnPath = [trigPath '/size_entry_burn'];
+add_block('simulink/User-Defined Functions/MATLAB Function', fcnPath);
+chart = sfroot().find('-isa', 'Stateflow.EMChart', 'Path', fcnPath);
+chart.Script = strjoin({ ...
+    'function [mCutoff, sized] = size_entry_burn(state, p)'
+    '%SIZE_ENTRY_BURN Runs once, when the stage descends through the entry'
+    '%   start altitude: sizes the entry burn from the measured state with'
+    '%   the guidance''s own predictor (entry_burn_sizing, MATLAB code run'
+    '%   extrinsically) and returns the engine-cutoff mass.'
+    'coder.extrinsic(''entry_cutoff_mass'');'
+    'mCutoff = 0;'
+    'sized = 0;'
+    'if p.entry.enabled'
+    '    mCutoff = entry_cutoff_mass(state, p);'
+    '    sized = 1;'
+    'end'
+    }, newline);
+pData = chart.find('-isa', 'Stateflow.Data', 'Name', 'p');
+pData.Scope = 'Parameter';         % the workspace struct p (set by InitFcn)
+pData.Tunable = false;
+add_line(trigPath, 'state/1', 'size_entry_burn/1');
+add_line(trigPath, 'size_entry_burn/1', 'mCutoff/1');
+add_line(trigPath, 'size_entry_burn/2', 'sized/1');
+Simulink.BlockDiagram.arrangeSystem(trigPath);
+
+add_block('simulink/Logic and Bit Operations/Relational Operator', [guidPath '/AboveCutoffMass'], 'Operator', '>');
+add_block('simulink/Logic and Bit Operations/Logical Operator', [guidPath '/EntryActive'], 'Operator', 'AND');
+add_block('simulink/Sources/Constant', [guidPath '/EntryT'], 'Value', 'p.T_max_entry');
+add_block('simulink/Math Operations/Gain', [guidPath '/NegVx'], 'Gain', '-1');
+add_block('simulink/Math Operations/Gain', [guidPath '/NegVy'], 'Gain', '-1');
+add_block('simulink/Math Operations/Trigonometric Function', [guidPath '/RetroAngle'], 'Operator', 'atan2');
+add_block('simulink/Signal Routing/Switch', [guidPath '/EntrySwitchT'],     'Criteria', 'u2 >= Threshold', 'Threshold', '0.5');
+add_block('simulink/Signal Routing/Switch', [guidPath '/EntrySwitchTheta'], 'Criteria', 'u2 >= Threshold', 'Threshold', '0.5');
+
+add_line(guidPath, 'y_in/1', 'AboveEntryStart/1');
+add_line(guidPath, 'EntryStartAlt/1', 'AboveEntryStart/2');
+add_line(guidPath, 'AboveEntryStart/1', 'EntryBurnSizing/Trigger');
+add_line(guidPath, 'x_in/1',  'StateMux/1');
+add_line(guidPath, 'y_in/1',  'StateMux/2');
+add_line(guidPath, 'vx_in/1', 'StateMux/3');
+add_line(guidPath, 'vy_in/1', 'StateMux/4');
+add_line(guidPath, 'm_in/1',  'StateMux/5');
+add_line(guidPath, 'StateMux/1', 'EntryBurnSizing/1');
+add_line(guidPath, 'm_in/1', 'AboveCutoffMass/1');
+add_line(guidPath, 'EntryBurnSizing/1', 'AboveCutoffMass/2');
+add_line(guidPath, 'EntryBurnSizing/2', 'EntryActive/1');
+add_line(guidPath, 'AboveCutoffMass/1', 'EntryActive/2');
+add_line(guidPath, 'vy_in/1', 'NegVy/1');
+add_line(guidPath, 'vx_in/1', 'NegVx/1');
+add_line(guidPath, 'NegVy/1', 'RetroAngle/1');   % atan2(-vy, -vx): opposite to velocity
+add_line(guidPath, 'NegVx/1', 'RetroAngle/2');
+add_line(guidPath, 'EntryT/1', 'EntrySwitchT/1');
+add_line(guidPath, 'EntryActive/1', 'EntrySwitchT/2');
+add_line(guidPath, 'ZeroT/1', 'EntrySwitchT/3');
+add_line(guidPath, 'RetroAngle/1', 'EntrySwitchTheta/1');
+add_line(guidPath, 'EntryActive/1', 'EntrySwitchTheta/2');
+add_line(guidPath, 'ZeroTheta/1', 'EntrySwitchTheta/3');
+
+% Landing burn below ignition altitude, else entry burn (if active) / coast
 add_line(guidPath, 'LD_T/1', 'InnerSwitchT/1');
 add_line(guidPath, 'IsBelowIgnite/1', 'InnerSwitchT/2');
-add_line(guidPath, 'ZeroT/1', 'InnerSwitchT/3');
+add_line(guidPath, 'EntrySwitchT/1', 'InnerSwitchT/3');
 
 add_line(guidPath, 'LD_Theta/1', 'InnerSwitchTheta/1');
 add_line(guidPath, 'IsBelowIgnite/1', 'InnerSwitchTheta/2');
-add_line(guidPath, 'ZeroTheta/1', 'InnerSwitchTheta/3');
+add_line(guidPath, 'EntrySwitchTheta/1', 'InnerSwitchTheta/3');
 
 add_line(guidPath, 'BB_T/1', 'OuterSwitchT/1');
 add_line(guidPath, 'IsBoostback/1', 'OuterSwitchT/2');
@@ -251,6 +335,9 @@ add_line(mdl, 'GuidancePhaseLogic/1', 'VehicleDynamics/1'); % T_cmd    -> T_in
 add_line(mdl, 'GuidancePhaseLogic/2', 'VehicleDynamics/2'); % theta_cmd-> theta_in
 add_line(mdl, 'VehicleDynamics/2', 'GuidancePhaseLogic/1'); % y_out    -> y_in
 add_line(mdl, 'VehicleDynamics/5', 'GuidancePhaseLogic/2'); % m_out    -> m_in
+add_line(mdl, 'VehicleDynamics/1', 'GuidancePhaseLogic/3'); % x_out    -> x_in
+add_line(mdl, 'VehicleDynamics/3', 'GuidancePhaseLogic/4'); % vx_out   -> vx_in
+add_line(mdl, 'VehicleDynamics/4', 'GuidancePhaseLogic/5'); % vy_out   -> vy_in
 
 add_block('simulink/Signal Routing/Mux', [mdl '/LogMux'], 'Inputs', '7');
 add_line(mdl, 'VehicleDynamics/1', 'LogMux/1');
@@ -295,7 +382,7 @@ set_param(mdl, 'Solver', 'ode45', 'RelTol', '1e-9', 'AbsTol', '1e-9', ...
 initFcnStr = ['projRoot = fileparts(fileparts(get_param(bdroot,''FileName''))); ' ...
               'addpath(genpath(projRoot)); ' ...
               'p = vehicleParams(); ' ...
-              'bb = boostback_guidance([], p); ' ...
+              'bb = boostback_targeting([], p); ' ...
               'ld = pdg_landing_guidance([], p);'];
 set_param(mdl, 'InitFcn', initFcnStr);
 

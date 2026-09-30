@@ -13,6 +13,7 @@ addpath(genpath(fileparts(fileparts(mfilename('fullpath')))));
 % (sim/study_drag_effect.m), not a pass/fail property of the solver.
 p = vehicleParams();
 p.aero.dragEnabled = false;
+p.entry.enabled = false;
 testCase.TestData.p = p;
 testCase.TestData.state0 = [p.sep.x; p.sep.y; p.sep.vx; p.sep.vy; p.m0];
 testCase.TestData.bb = boostback_guidance(testCase.TestData.state0, p);

@@ -19,7 +19,7 @@ roles (Munich area; motivating example: Isar Aerospace's working-student GNC
 postings, which explicitly mention "GNC algorithms for reusability scenarios,
 trajectory optimization, Monte Carlo analysis, MATLAB/Simulink").
 
-## Current state (Phase 2 complete — see "Phase 2 as implemented" below)
+## Current state (Phase 2 done; Phase 4 drag + entry burn + drag-aware targeting done; Phase 3 next)
 
 Two parallel implementations of the same Phase 1 physics exist, deliberately:
 
@@ -35,12 +35,15 @@ Two parallel implementations of the same Phase 1 physics exist, deliberately:
   truth for the diagram — re-run it to rebuild, don't hand-edit the `.slx`
   and let the two drift apart).
 
-Both fly the **real convex boostback guidance** (Phase 2, done) and then
-coast to landing-burn ignition altitude, arriving within ~1 m of the
-aimed-for point. The landing burn (`guidance/pdg_landing_guidance.m`) is
-still a **placeholder** fixed profile, so touchdown is hard. **Phase 3
-(convex landing guidance) is the next task** — but read the "vacuum
-consequence" note in "Phase 2 as implemented" first.
+Both fly the same nominal sequence, and agree at ignition to ~0.3 m:
+**convex boostback** (Phase 2) aimed by **`boostback_targeting`** (aim-point
+bias for drag + entry burn) → coast with **drag** (COESA plant) → **entry
+burn** sized online at 60 km → drag braking → landing-burn ignition at 3 km
+(~60 m from the aimed point: guidance-model error). The landing burn
+(`guidance/pdg_landing_guidance.m`) is still a **placeholder**, so
+touchdown is hard. **Phase 3 (convex landing guidance) is the next task**;
+it now starts from a realistic ~450 m/s, Mach ~1.4 state instead of the
+vacuum 1.8 km/s.
 
 The project is a git repository (initialized at the Phase 1 baseline).
 
@@ -342,7 +345,7 @@ Done: drag in both plants; guidance unchanged (still vacuum). Decisions:
 - Ignition at 3 km is still supersonic (Mach 1.4–2.1) — terminal velocity
   (~250 m/s at sea level for this ballistic coefficient) is not reached.
 
-### Entry burn (Phase 4, sizing + trade study done; not yet in Simulink)
+### Entry burn (Phase 4: sizing, trade study, Simulink — done)
 
 Agreed design: **fixed start altitude** (`p.entry.startAltitude`, 60 km),
 retrograde at full thrust (`p.nEnginesEntry`), Δv sized **online at burn
@@ -352,8 +355,19 @@ speed of sound `p.atmo.soundSpeed`, the CD table) + `fzero` for the
 **minimum Δv meeting each active limit** — peak q (`p.entry.qMax`), peak
 heating index √ρ·V³ relative to no burn (`p.entry.heatMaxRel`), speed at
 ignition (`p.entry.vIgnitionMax`) — taking the largest. Plant flies it via
-`simulate_boostback_coast` (cut off at the planned mass). Off by default
-(`p.entry.enabled = false`) until the Simulink model has it.
+`simulate_boostback_coast` (cut off at the planned mass). **On by default**
+with `p.entry.qMax = 150e3` (reachable for RTLS; without the burn the
+nominal descent peaks at ~229 kPa).
+
+In Simulink (`GuidancePhaseLogic`): a **Triggered Subsystem** fires on the
+falling edge of y − startAltitude (zero-crossing located) and runs a
+**MATLAB Function block** (`size_entry_burn`) that calls
+`entry_cutoff_mass` (→ `entry_burn_sizing`) via `coder.extrinsic`, with
+`p` as a non-tunable Parameter-scope input. It holds the cutoff mass; the
+burn itself is native blocks (m > mCutoff AND sized → T_max_entry at
+atan2(−vy, −vx)). Extrinsic = normal-mode simulation only, not code
+generation — the sizing uses ode45/fzero. The wrapper returns one double
+so the block's typing stays trivial.
 
 Why size to the limits and not lower (discussed at length): only ~¼–⅓ of
 speed removed at 60 km survives to 3 km (drag would remove the rest for
@@ -384,9 +398,28 @@ Gotchas hit:
 - Heating-limit and q-limit costs track each other closely (heat 0.63 ≈
   q 150 kPa ≈ 530 kg RTLS).
 - The entry burn shifts the ignition point (RTLS: up to +1.3 km; 100 km
-  site: ~−0.3 km) because it also slows horizontal speed. The boostback
-  doesn't know about it yet → the targeting bias estimator should account
-  for the entry burn, not just drag.
+  site: ~−0.3 km) because it also slows horizontal speed → handled by
+  `boostback_targeting` (below).
+
+### Drag- and entry-burn-aware boostback targeting (done)
+
+`guidance/boostback_targeting.m`: predictor-corrector aim-point bias
+around the unchanged convex `boostback_guidance` (only the constant
+x_target moves, so it stays an SOCP). Predictor = `predict_descent.m`:
+guidance-model coast (`guidance_model_eom.m`, shared with the entry
+sizing) → the entry burn the flight computer would size → coast to
+ignition. Secant update, first step bias −= miss; tolerance 10 m. With
+neither drag nor entry burn it returns `boostback_guidance` unchanged.
+Used by the MATLAB demo and the Simulink InitFcn; the studies
+(`study_drag_effect`, `study_entry_burn`) deliberately still use the raw
+`boostback_guidance` to measure the unbiased effect, and
+`mc_case_boostback` hasn't been switched yet (MC deferred).
+
+Results (COESA plant, qMax 150 kPa): converges in 1–2 iterations (~9 s,
+≤ 7 kg extra propellant). RTLS + entry burn: plant miss +641 m → −48 m;
+100 km site: −93 m → −63 m. The residual ~50–70 m is the exponential-vs-
+COESA density model error; a better onboard density model (e.g. piecewise
+exponential) would shrink it, but it's already small for the landing burn.
 
 ### Phase 4: Atmosphere & aerodynamics (drag) — original design notes
 
@@ -485,3 +518,11 @@ described above (commanded pitch → moment M), not straight into the plant.
   file even after it's rewritten on disk — if a newly added struct field
   seems to not exist, try `clear functions; rehash` before assuming the file
   edit didn't take.
+- If the MCP tools report "failed to attach to MATLAB session", the MCP
+  server is up but the MATLAB desktop session it drives is gone (closed or
+  restarted). Fallback that always works: run scripts in a separate
+  process, `matlab -batch "script"` (~30 s startup each; note a script
+  that calls `clear` wipes the caller's variables).
+- `p.target.x` has been kept at 0 (RTLS) in commits while the user
+  experiments locally with 100 km — stage only the intended lines of
+  `vehicleParams.m` (build the staged blob from HEAD + edits).
