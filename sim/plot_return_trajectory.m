@@ -9,7 +9,8 @@ function fig = plot_return_trajectory(t, X, T, theta, p, ev, figName)
 %   theta  - n x 1 thrust angle from +x axis [rad] (ignored where T = 0)
 %   p      - parameter struct from vehicleParams()
 %   ev     - event times [s]: ev.tCutoff (boostback cutoff),
-%            ev.tIgnite (landing-burn ignition); NaN if not reached
+%            ev.tIgnite (landing-burn ignition); NaN if not reached;
+%            optional ev.tEntry = [start end] of an entry burn
 %   figName- figure title
 %
 %   Note the flight-path angle (direction of the velocity) and the thrust
@@ -95,4 +96,7 @@ grid(ax, 'on');
 xlabel(ax, 'Time [s]'); ylabel(ax, yLabel); title(ax, titleStr);
 if isfinite(ev.tCutoff), xline(ax, ev.tCutoff, ':', 'Cutoff', 'HandleVisibility', 'off'); end
 if isfinite(ev.tIgnite), xline(ax, ev.tIgnite, ':', 'Ignition', 'HandleVisibility', 'off'); end
+if isfield(ev, 'tEntry') && ~isempty(ev.tEntry)
+    xline(ax, ev.tEntry(1), ':', 'Entry burn', 'HandleVisibility', 'off');
+end
 end

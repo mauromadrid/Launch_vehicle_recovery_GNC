@@ -5,7 +5,9 @@ function [aDrag, info] = dragAcceleration(state, p)
 %     state - [x; y; vx; vy; m]
 %     aDrag - [ax; ay] drag acceleration [m/s^2], opposite to the velocity
 %     info  - struct: rho [kg/m^3], mach, CD, q (dynamic pressure) [Pa],
-%             decel (|aDrag|) [m/s^2]
+%             decel (|aDrag|) [m/s^2], heat = sqrt(rho)*V^3 -- the
+%             Sutton-Graves stagnation heating rate without its constant
+%             and nose-radius factor, i.e. a *relative* heating index
 %
 %   D = 0.5*rho*V^2*CD(Mach)*A_ref along -v_hat, so
 %   aDrag = -(0.5*rho*V*CD*A_ref/m) * v, which avoids dividing by V (no
@@ -18,7 +20,7 @@ v = state(3:4);
 V = norm(v);
 m = state(5);
 
-info = struct('rho', 0, 'mach', 0, 'CD', 0, 'q', 0, 'decel', 0);
+info = struct('rho', 0, 'mach', 0, 'CD', 0, 'q', 0, 'decel', 0, 'heat', 0);
 if ~p.aero.dragEnabled
     aDrag = [0; 0];
     return
@@ -34,5 +36,5 @@ k = 0.5 * rho * V * CD * p.aero.A_ref / m;
 aDrag = -k * v;
 
 info = struct('rho', rho, 'mach', mach, 'CD', CD, 'q', 0.5 * rho * V^2, ...
-              'decel', k * V);
+              'decel', k * V, 'heat', sqrt(rho) * V^3);
 end

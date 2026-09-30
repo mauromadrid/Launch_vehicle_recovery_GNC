@@ -342,6 +342,52 @@ Done: drag in both plants; guidance unchanged (still vacuum). Decisions:
 - Ignition at 3 km is still supersonic (Mach 1.4–2.1) — terminal velocity
   (~250 m/s at sea level for this ballistic coefficient) is not reached.
 
+### Entry burn (Phase 4, sizing + trade study done; not yet in Simulink)
+
+Agreed design: **fixed start altitude** (`p.entry.startAltitude`, 60 km),
+retrograde at full thrust (`p.nEnginesEntry`), Δv sized **online at burn
+start** from the measured state by `guidance/entry_burn_sizing.m`:
+numerical predictor (guidance model: exponential atmosphere, constant
+speed of sound `p.atmo.soundSpeed`, the CD table) + `fzero` for the
+**minimum Δv meeting each active limit** — peak q (`p.entry.qMax`), peak
+heating index √ρ·V³ relative to no burn (`p.entry.heatMaxRel`), speed at
+ignition (`p.entry.vIgnitionMax`) — taking the largest. Plant flies it via
+`simulate_boostback_coast` (cut off at the planned mass). Off by default
+(`p.entry.enabled = false`) until the Simulink model has it.
+
+Why size to the limits and not lower (discussed at length): only ~¼–⅓ of
+speed removed at 60 km survives to 3 km (drag would remove the rest for
+free), so the propellant-optimal burn is the *minimum* that respects the
+limits; the landing burn removes the rest one-for-one. Riding q = q_max
+continuously is the textbook optimum but infeasible at entry speeds:
+holding q constant needs T/m = V²·sinγ/(2H) + g·sinγ − q/β (~14 g at
+1.5 km/s), hence short, high-thrust burns high up.
+
+Gotchas hit:
+- **`fzero`'s TolX is relative to |x|**: TolX = 0.5 accepted ±50% and
+  returned the first secant step. Use ~1e-4.
+- Δv is capped at the current speed: "opposite to the velocity" flips
+  when V → 0 and the integrator chatters (a 10-min run).
+
+**Trade-study findings** (`sim/study_entry_burn.m`, 1 engine, start 60 km):
+- **RTLS**: no burn = 229 kPa. Minimum reachable ≈ 104 kPa (plant) using
+  all 1.1 t above the landing reserve → **60 kPa is impossible for RTLS**
+  with this vehicle. 150 kPa costs 530 kg (landing margin 690 kg).
+- **100 km site** (more propellant left): 60 kPa costs 1.76 t, margin 850 kg.
+- Guidance model under-predicts plant peak q by ~3–8% → limits are
+  exceeded by that much. Needs a margin (or feedback) before calling a
+  limit "met".
+- **Start altitude**: lower is cheaper, but only by ~10–16% from 80 → 30 km
+  (RTLS: 580 → 474 kg at 150 kPa). The main reason is gravity re-accelerating
+  the stage between an early burn and the dense air, not drag "waste" —
+  there's little air above 30 km. Fixed 60 km costs ~50 kg vs 30 km.
+- Heating-limit and q-limit costs track each other closely (heat 0.63 ≈
+  q 150 kPa ≈ 530 kg RTLS).
+- The entry burn shifts the ignition point (RTLS: up to +1.3 km; 100 km
+  site: ~−0.3 km) because it also slows horizontal speed. The boostback
+  doesn't know about it yet → the targeting bias estimator should account
+  for the entry burn, not just drag.
+
 ### Phase 4: Atmosphere & aerodynamics (drag) — original design notes
 
 Drag is a first-order effect at low altitude/high speed, not a rounding

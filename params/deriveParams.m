@@ -10,6 +10,9 @@ p.T_max = p.nEnginesLanding * p.T_engine_max;       % landing burn
 p.T_min = p.throttle_min * p.T_max;
 p.T_max_boostback = p.nEnginesBoostback * p.T_engine_max;
 p.T_min_boostback = p.throttle_min * p.T_max_boostback;
+if isfield(p, 'nEnginesEntry')
+    p.T_max_entry = p.nEnginesEntry * p.T_engine_max;  % entry burn flies at full thrust
+end
 
 p.m0 = p.dryMass + p.propMassAtSeparation;
 

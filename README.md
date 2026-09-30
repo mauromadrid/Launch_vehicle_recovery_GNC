@@ -134,6 +134,18 @@ Runs the boostback guidance with Falcon Heavy side-booster parameters
 envelope of BECO states, checking feasibility is monotonic in propellant and
 reporting the minimum boostback propellant and burn duration.
 
+## Drag and entry-burn studies
+
+```matlab
+study_drag_effect(p)    % vacuum-planned boostback flown with / without drag
+study_entry_burn(p)     % entry-burn cost vs q / heating limits and start altitude
+```
+
+The entry burn (`guidance/entry_burn_sizing.m`) is sized online at a fixed
+start altitude: the minimum retrograde Δv whose predicted descent (guidance
+model: exponential atmosphere) meets every active limit. It's off by default
+(`p.entry.enabled`) until the Simulink model includes it.
+
 ## Monte Carlo / sensitivity studies
 
 ```matlab

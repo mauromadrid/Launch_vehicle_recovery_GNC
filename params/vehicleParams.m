@@ -82,6 +82,24 @@ p.atmo.maxAltitude = 150e3;      % [m]
 % plant, as real onboard models are; used by the drag bias estimator.
 p.atmo.rho0 = 1.4168;            % [kg/m^3]
 p.atmo.H    = 7008;              % [m] scale height
+p.atmo.soundSpeed = 300;         % [m/s] guidance model's constant speed of
+                                 %       sound (Mach for CD); COESA ranges
+                                 %       ~275-340 m/s below 86 km
+
+% --- Entry burn (Phase 4) ---
+% Retrograde burn (thrust opposite the velocity) at full thrust, started
+% when descending through startAltitude. Its delta-v is sized online, at
+% burn start, from the measured state: the minimum delta-v for which the
+% guidance model predicts every active limit is met (entry_burn_sizing).
+% Limits are ILLUSTRATIVE; set a limit to Inf to deactivate it.
+p.entry.enabled       = false;   % off until the Simulink model has it too
+p.entry.startAltitude = 60e3;    % [m]
+p.nEnginesEntry       = 1;       % (T_max_entry: deriveParams)
+p.entry.qMax          = 60e3;    % [Pa]  peak dynamic pressure after the burn
+p.entry.heatMaxRel    = Inf;     % [-]   peak heating index sqrt(rho)*V^3,
+                                 %       relative to the same descent with
+                                 %       no entry burn (e.g. 0.5 = halve it)
+p.entry.vIgnitionMax  = Inf;     % [m/s] speed at landing-burn ignition
 
 % --- Constraints (used by the guidance modules, Phases 2-3) ---
 p.maxTiltAngle    = deg2rad(20);  % [rad] landing burn: max thrust angle

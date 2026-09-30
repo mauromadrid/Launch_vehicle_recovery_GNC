@@ -40,8 +40,8 @@ y = [yA; yB; yC];
 % Thrust history, reconstructed the same way the EOM applied it
 T_A = bb.aCmd(kA) .* yA(:,5);
 T_C = ld.T_const * (yC(:,5) > p.dryMass);
-T     = [T_A; zeros(size(tB)); T_C];
-theta = [bb.theta(kA); zeros(size(tB)); ld.theta_const * ones(size(tC))];
+T     = [T_A; traj.TB; T_C];            % TB: entry burn (if enabled), else zeros
+theta = [bb.theta(kA); traj.thetaB; ld.theta_const * ones(size(tC))];
 
 fprintf('--- Open-loop demo (convex boostback, placeholder landing) ---\n');
 fprintf('Boostback duration  : %.1f s, propellant %.0f kg (planned %.0f kg)\n', ...
@@ -57,4 +57,5 @@ disp(y(end,:));
 %% Plots
 ev.tCutoff = tA(end);
 ev.tIgnite = tA(end) + tB(end);
+ev.tEntry  = tA(end) + traj.tEntry;   % [] if no entry burn
 plot_return_trajectory(t, y, T, theta, p, ev, 'Booster Return - MATLAB Open-Loop Demo');
