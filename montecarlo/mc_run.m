@@ -7,10 +7,10 @@ function results = mc_run(pNominal, samples, caseFcn, opts)
 %   pNominal - nominal parameter struct
 %   samples  - table from mc_generate_samples (one row per case)
 %   caseFcn  - @(p) -> struct of scalar metrics (numeric, logical or
-%              string). This is the only phase-specific part: Phase 2
-%              uses mc_case_boostback; later phases plug in a case that
-%              runs the landing guidance or the full Simulink model,
-%              without touching sampling, execution or bookkeeping.
+%              string). The only application-specific part: normally
+%              mc_case_mission, which flies the main simulation
+%              (simulate_mission) and measures it, so the Monte Carlo
+%              always runs the current mission, not its own copy of it.
 %
 %   results  - one row per case: the sampled inputs, then every metric
 %              caseFcn returned, then

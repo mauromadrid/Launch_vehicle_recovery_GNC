@@ -88,27 +88,33 @@ programmatically constructs the `.slx` from scratch) — re-run it
 whenever the model's structure needs to change, rather than hand-editing
 the `.slx` and letting the two drift apart.
 
-## Running the Simulink model
+## Running the main simulation (Simulink)
 
 ```matlab
-cd simulink
-run_and_plot
+flight = simulate_mission(p);   % run the Simulink model for parameter set p
+run simulink/run_and_plot.m     % the same, for vehicleParams(), plus plots
 ```
 
-Or rebuild the model from scratch first with `build_model`, then
-`run_and_plot`.
+`simulate_mission` is the single entry point for flying the mission: it
+computes the pre-flight guidance (`mission_setup`: boostback targeting,
+landing profile) for `p` and runs the model with those values. The Monte
+Carlo calls it for every sample. The model can also be run from its Run
+button, in which case its InitFcn uses `vehicleParams()`.
 
-## Running the Phase 1 MATLAB-only demo
+Rebuild the model from scratch with `build_model` after structural changes.
+
+## Running the MATLAB prototype (cross-check)
 
 ```matlab
 cd sim
 run_open_loop_demo
 ```
 
-Both the MATLAB and Simulink versions fly the convex boostback profile
-open-loop (as a zero-order-hold thrust-acceleration and angle schedule,
-`T = aCmd(t) * m`), coast to landing-burn ignition altitude, then run the
-placeholder landing burn — so neither lands softly yet (Phase 3).
+The plain-MATLAB implementation of the same mission, kept as an
+independent cross-check of the Simulink model (they agree at landing-burn
+ignition to ~0.3 m). Both fly the targeted convex boostback, the drag
+coast with the entry burn, and the placeholder landing burn — so neither
+lands softly yet (Phase 3).
 
 ## Plots
 
@@ -154,7 +160,7 @@ where drag and the entry burn will move the arrival point.
 ## Monte Carlo / sensitivity studies
 
 ```matlab
-run montecarlo/run_mc_boostback.m
+run montecarlo/run_mc_mission.m   % ~20-25 min for 200 cases: better via matlab -batch
 ```
 
 A phase-agnostic framework in `montecarlo/`:
@@ -166,13 +172,14 @@ A phase-agnostic framework in `montecarlo/`:
 | Sample | `mc_generate_samples(spec, N, Seed=, Method=)` | N input sets: seeded Latin hypercube (or plain random); uniform or truncated-normal |
 | Apply | `mc_apply_sample(p, row)` | One case's parameter set (handles speed/flight-path angle, re-derives `m0` and thrust bounds) |
 | Run | `mc_run(p, samples, caseFcn)` | One case per sample; errors captured per case; inputs + metrics in one table |
-| Case | `mc_case_boostback(p)` | The only phase-specific part: guidance + nonlinear replay → metrics |
+| Case | `mc_case_mission(p)` | Flies the main simulation (`simulate_mission`, i.e. the Simulink model) and reduces it to metrics |
 | Analyse | `mc_analyze(results, inputs, outputs)` | Summary stats, input-space map, rank-correlation sensitivity heatmap, histograms |
 
 To study other variables, change `vars` in the run script (any name from the
-catalog, or append a catalog row for any other numeric field of `p`). Later
-phases reuse everything except the case function. Results are saved to
-`results/` (not version-controlled).
+catalog, or append a catalog row for any other numeric field of `p`).
+Because the case function only calls `simulate_mission`, the Monte Carlo
+always flies the current mission — new features don't need to be added
+here. Results are saved to `results/` (not version-controlled).
 
 ## Running the tests
 

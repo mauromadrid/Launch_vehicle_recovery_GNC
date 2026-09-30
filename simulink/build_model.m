@@ -195,6 +195,8 @@ add_block('simulink/Sources/In1', [guidPath '/vx_in'], 'Port', '4');
 add_block('simulink/Sources/In1', [guidPath '/vy_in'], 'Port', '5');
 set_param([guidPath '/Out1'], 'Name', 'T_cmd');
 add_block('simulink/Sinks/Out1', [guidPath '/theta_cmd'], 'Port', '2');
+add_block('simulink/Sinks/Out1', [guidPath '/mCutoff_out'], 'Port', '3');   % logged
+add_block('simulink/Sinks/Out1', [guidPath '/entrySized_out'], 'Port', '4');
 
 add_block('simulink/Sources/Clock', [guidPath '/Clock']);
 add_block('simulink/Logic and Bit Operations/Relational Operator', [guidPath '/IsBoostback'], 'Operator', '<');
@@ -296,6 +298,8 @@ add_line(guidPath, 'StateMux/1', 'EntryBurnSizing/1');
 add_line(guidPath, 'm_in/1', 'AboveCutoffMass/1');
 add_line(guidPath, 'EntryBurnSizing/1', 'AboveCutoffMass/2');
 add_line(guidPath, 'EntryBurnSizing/2', 'EntryActive/1');
+add_line(guidPath, 'EntryBurnSizing/1', 'mCutoff_out/1');
+add_line(guidPath, 'EntryBurnSizing/2', 'entrySized_out/1');
 add_line(guidPath, 'AboveCutoffMass/1', 'EntryActive/2');
 add_line(guidPath, 'vy_in/1', 'NegVy/1');
 add_line(guidPath, 'vx_in/1', 'NegVx/1');
@@ -339,7 +343,7 @@ add_line(mdl, 'VehicleDynamics/1', 'GuidancePhaseLogic/3'); % x_out    -> x_in
 add_line(mdl, 'VehicleDynamics/3', 'GuidancePhaseLogic/4'); % vx_out   -> vx_in
 add_line(mdl, 'VehicleDynamics/4', 'GuidancePhaseLogic/5'); % vy_out   -> vy_in
 
-add_block('simulink/Signal Routing/Mux', [mdl '/LogMux'], 'Inputs', '7');
+add_block('simulink/Signal Routing/Mux', [mdl '/LogMux'], 'Inputs', '9');
 add_line(mdl, 'VehicleDynamics/1', 'LogMux/1');
 add_line(mdl, 'VehicleDynamics/2', 'LogMux/2');
 add_line(mdl, 'VehicleDynamics/3', 'LogMux/3');
@@ -347,6 +351,8 @@ add_line(mdl, 'VehicleDynamics/4', 'LogMux/4');
 add_line(mdl, 'VehicleDynamics/5', 'LogMux/5');
 add_line(mdl, 'GuidancePhaseLogic/1', 'LogMux/6');
 add_line(mdl, 'GuidancePhaseLogic/2', 'LogMux/7');
+add_line(mdl, 'GuidancePhaseLogic/3', 'LogMux/8');   % entry-burn cutoff mass
+add_line(mdl, 'GuidancePhaseLogic/4', 'LogMux/9');   % entry burn sized (0/1)
 
 add_block('simulink/Sinks/To Workspace', [mdl '/LogOut'], 'VariableName', 'simlog', 'SaveFormat', 'Structure With Time');
 add_line(mdl, 'LogMux/1', 'LogOut/1');
@@ -377,13 +383,14 @@ add_line(mdl, 'StopAND/1', 'StopSim/1');
 set_param(mdl, 'Solver', 'ode45', 'RelTol', '1e-9', 'AbsTol', '1e-9', ...
                'MaxStep', '0.5', 'StopTime', '600');
 
-% Self-contained: (re)derive p, bb, ld whenever the model is simulated,
-% regardless of what folder MATLAB's current working directory is.
+% Self-contained for interactive runs (Run button, run_and_plot): derive
+% p, bb, ld from the nominal parameters at simulation start. Programmatic
+% runs (simulate_mission, hence the Monte Carlo) disable this InitFcn and
+% supply their own p, bb, ld through a Simulink.SimulationInput.
 initFcnStr = ['projRoot = fileparts(fileparts(get_param(bdroot,''FileName''))); ' ...
               'addpath(genpath(projRoot)); ' ...
               'p = vehicleParams(); ' ...
-              'bb = boostback_targeting([], p); ' ...
-              'ld = pdg_landing_guidance([], p);'];
+              '[bb, ld] = mission_setup(p);'];
 set_param(mdl, 'InitFcn', initFcnStr);
 
 Simulink.BlockDiagram.arrangeSystem(mdl);
