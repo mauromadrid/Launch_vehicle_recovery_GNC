@@ -310,6 +310,34 @@ per case after; infeasible boostbacks ~12 s. Decisions and why:
 - The saved `results/mc_boostback_*.mat` runs predate drag/entry
   burn/targeting (vacuum, boostback only): valid for what they were, not
   for the current mission.
+- Plots are labelled via `mc_labels` (inputs from the stored catalog,
+  metrics from a table with units/scaling) — add new metrics there.
+
+**First full-mission MC** (2026-09-30; speed ±15% × FPA 5–45°, 200 LHS
+samples each, seed 1, entry qMax 150 kPa; `results/mc_mission_site*`):
+
+| | Launch site (RTLS) | 100 km site |
+|---|---|---|
+| Feasible | 173/200 (86.5%) | 200/200 |
+| Landing margin (P5–P95) | 330–1077 kg, min 248 | 998–2382 kg, min 719 |
+| Peak q (P5–P95) | 136–164 kPa, max 171 | 89–157 kPa |
+| Peak q ≤ 150 kPa in plant | **22/173** | 101/200 (= the no-burn cases) |
+| Miss at ignition | −21…−109 m (P95 88) | −48…−165 m (P95 124) |
+
+- Infeasible corner unchanged from the vacuum study (horizontal speed
+  > ~1612 m/s): drag/entry/targeting don't affect boostback feasibility.
+- **Every case that needed an entry burn ends above the 150 kPa limit**
+  (typically 155–164 kPa): the exponential guidance atmosphere
+  under-predicts peak q by ~3–8%. RTLS outliers to 171 kPa are
+  propellant-limited (entry burn clamped at the landing reserve, e.g.
+  42 kg left for it). Fix options: size to qMax/(1 + margin), or a
+  better onboard density model (piecewise exponential).
+- Misses are **all negative** (systematic, same model error) → calibratable.
+- 100 km: steeper FPA ⇒ cheaper boostback (ρ −0.74) but higher apogee
+  (+0.98) ⇒ bigger entry burn (+0.93); landing margin driven by speed
+  (−0.95).
+- Uniform sampling ⇒ histograms show spread over the swept range, not
+  flight probabilities (Phase 5 needs realistic distributions).
 
 ### Phase 4 as implemented so far: drag in the plant + effect study
 
