@@ -50,39 +50,46 @@ if any(~ok)
     fprintf('  first error: %s\n', results.message(find(~ok, 1)));
 end
 
-% ---- Summary statistics over feasible cases ----
+% ---- Labels (names, units, display scaling) ----
+lblIn  = arrayfun(@(n) mc_labels(n, results), inputs);
+lblOut = arrayfun(@(n) mc_labels(n, results), outputs);
+lblC   = mc_labels(opts.ColorBy, results);
+refColor = [0.55 0.55 0.55];   % reference marks, visible in light and dark themes
+
+% ---- Summary statistics over feasible cases (display units) ----
 stats = zeros(numel(outputs), 6);
 for j = 1:numel(outputs)
-    y = double(results.(outputs(j))(feas));
+    y = double(results.(outputs(j))(feas)) * lblOut(j).scale;
     stats(j,:) = [mean(y), std(y), min(y), prctile_(y, 5), prctile_(y, 95), max(y)];
 end
-summary = array2table(stats, 'RowNames', cellstr(outputs), ...
+rowNames = cellstr(outputs + " [" + [lblOut.unit] + "]");
+summary = array2table(stats, 'RowNames', rowNames, ...
     'VariableNames', {'Mean', 'Std', 'Min', 'P5', 'P95', 'Max'});
 disp(summary);
 
 % ---- 1. Input-space map ----
-figure('Name', opts.Title + " - input space", 'Position', [80 80 800 600]);
-c = results.(opts.ColorBy);
+figure('Name', opts.Title + " - input space", 'Position', [80 80 820 600]);
+c = double(results.(opts.ColorBy)) * lblC.scale;
 if numel(inputs) >= 2
     x = results.(inputs(1)); y = results.(inputs(2));
-    scatter(x(feas), y(feas), 36, c(feas), 'filled', 'DisplayName', 'Feasible');
+    scatter(x(feas), y(feas), 36, c(feas), 'filled', 'DisplayName', 'Feasible case');
     hold on;
     plot(x(~feas), y(~feas), 'x', 'Color', [0.85 0.2 0.2], 'MarkerSize', 8, ...
          'LineWidth', 1.5, 'DisplayName', 'Infeasible / error');
     [xn, yn] = nominalInputs(results, inputs(1:2));
     plot(xn, yn, 'p', 'MarkerSize', 16, 'MarkerFaceColor', 'w', ...
          'MarkerEdgeColor', 'k', 'DisplayName', 'Nominal');
-    ylabel(inputs(2));
-    cb = colorbar; cb.Label.String = opts.ColorBy;
+    ylabel(lblIn(2).text);
+    cb = colorbar; cb.Label.String = lblC.text;
     legend('Location', 'bestoutside');
 else
     x = results.(inputs(1));
-    plot(x(feas), c(feas), 'o', 'DisplayName', 'Feasible'); hold on;
+    plot(x(feas), c(feas), 'o', 'DisplayName', 'Feasible case'); hold on;
     plot(x(~feas), zeros(nnz(~feas), 1), 'x', 'Color', [0.85 0.2 0.2], ...
          'DisplayName', 'Infeasible / error');
-    ylabel(opts.ColorBy); legend('Location', 'best');
+    ylabel(lblC.text); legend('Location', 'best');
 end
-xlabel(inputs(1)); grid on;
+xlabel(lblIn(1).text); grid on;
 title(sprintf('%s: %d/%d feasible', opts.Title, nnz(feas), height(results)));
 
 % ---- 2. Sensitivity heatmap (Spearman rank correlation) ----
@@ -94,22 +101,28 @@ for j = 1:numel(outputs)
         rho(j, i) = spearman(results.(inputs(i))(rows), double(results.(outputs(j))(rows)));
     end
 end
-figure('Name', opts.Title + " - sensitivity", 'Position', [120 120 150 + 110*numel(inputs), 120 + 40*numel(outputs)]);
-h = heatmap(cellstr(inputs), cellstr(outputs), round(rho, 2));
+figure('Name', opts.Title + " - sensitivity", ...
+       'Position', [120 120 380 + 150*numel(inputs), 140 + 42*numel(outputs)]);
+h = heatmap(cellstr([lblIn.short]), cellstr([lblOut.short]), round(rho, 2));
 h.Colormap = redblue(); h.ColorLimits = [-1 1];
-h.Title = "Spearman rank correlation (output vs input)";
+h.Title = "Rank correlation (output vs input)";
+h.XLabel = "Dispersed input";
+h.YLabel = "Output";
 
 % ---- 3. Output histograms ----
 nOut = numel(outputs);
-figure('Name', opts.Title + " - outputs", 'Position', [160 160 900 250*ceil(nOut/3)]);
+figure('Name', opts.Title + " - outputs", 'Position', [160 160 1000 270*ceil(nOut/3)]);
 tl = tiledlayout(ceil(nOut/3), min(nOut, 3), 'TileSpacing', 'compact');
+title(tl, sprintf('%s: distribution over the %d feasible cases', opts.Title, nnz(feas)));
 for j = 1:nOut
     ax = nexttile(tl);
-    histogram(ax, double(results.(outputs(j))(feas)));
+    histogram(ax, double(results.(outputs(j))(feas)) * lblOut(j).scale);
     if isfield(nominal, outputs(j))
-        xline(ax, double(nominal.(outputs(j))), 'k--', 'Nominal');
+        xline(ax, double(nominal.(outputs(j))) * lblOut(j).scale, '--', 'Nominal', ...
+              'Color', refColor, 'LineWidth', 1.2);
     end
-    title(ax, outputs(j), 'Interpreter', 'none'); grid(ax, 'on');
+    xlabel(ax, lblOut(j).text); ylabel(ax, 'Number of cases');
+    grid(ax, 'on');
 end
 end
 
