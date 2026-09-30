@@ -24,10 +24,13 @@ projRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(genpath(projRoot));
 
 %% ---- Study configuration ----
-pNominal = vehicleParams();
-vars     = ["speed", "fpa"];   % any Name(s) from mc_dispersion_catalog
-N        = 200;
-seed     = 1;
+% Defaults; any of these can be set by the caller before running the
+% script (e.g. a batch wrapper studying another landing site).
+if ~exist('pNominal', 'var'), pNominal = vehicleParams(); end
+if ~exist('vars', 'var'),     vars = ["speed", "fpa"]; end   % catalog Name(s)
+if ~exist('N', 'var'),        N = 200; end
+if ~exist('seed', 'var'),     seed = 1; end
+if ~exist('runTag', 'var'),   runTag = ""; end               % added to the file name
 
 catalog = mc_dispersion_catalog(pNominal);
 % Ranges can be overridden per study, e.g.:
@@ -48,7 +51,7 @@ results.Properties.UserData = ud;
 
 resultsDir = fullfile(projRoot, 'results');
 if ~exist(resultsDir, 'dir'), mkdir(resultsDir); end
-outFile = fullfile(resultsDir, "mc_mission_" + string(datetime('now', 'Format', 'yyyyMMdd_HHmmss')) + ".mat");
+outFile = fullfile(resultsDir, "mc_mission_" + runTag + string(datetime('now', 'Format', 'yyyyMMdd_HHmmss')) + ".mat");
 save(outFile, 'results');
 fprintf('Saved %s (%.0f s total)\n', outFile, ud.totalTime);
 
