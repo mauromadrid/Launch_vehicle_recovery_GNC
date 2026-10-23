@@ -261,13 +261,52 @@ point — both acceptable first-order approximations for now.
 
 ## Later phases — key points to remember when we get there
 
-### Phase 3: Landing burn guidance
+### Phase 3: Landing burn guidance (in progress — SCvx guidance works in MATLAB; not yet in Simulink)
 
-Same convex-SOCP approach as boostback, but the full treatment: minimize
-fuel (or landing error), thrust bounds, pointing constraint, AND glide-slope
-constraint (stay inside a cone above the landing site so the trajectory
-doesn't dive into terrain early). Terminal condition: zero (or near-zero)
-position and velocity error at the pad.
+`guidance/landing_guidance_scvx.m` (tested: `test_landing_guidance_scvx`).
+Decided with the user: **full SCvx with trust region** (not frozen drag
+coefficients — at ignition drag ≈ 150 kN vs 200 kN thrust, too strong for
+the shortcut); touchdown v = 0; fixed 3 km ignition for v1; no separate
+min-landing-error fallback (non-zero virtual control flags infeasibility).
+
+Formulation: same LCvx variables as boostback (u = T/m, σ, z = ln m/m0),
+plus drag (guidance model: exponential atmosphere) in nonlinear dynamics;
+**normalized time τ ∈ [0,1], burn duration s a decision variable** (time
+dilation → no outer burn-time search); landing-engine thrust bounds
+(Taylor about the reference z̄); pointing ≤ 20° from vertical; glide slope
+|x − x_pad| ≤ y·cot(10°) (2 linear rows in 2-D); r_N = pad, v_N = 0,
+m ≥ dry; cost −z_N. SCvx: exact discretization of the dynamics linearized
+along the reference (RK4 on x, Φ, B, S per ZOH interval; Jacobians by
+central differences); c_k = affine term making the model exact at the
+reference; virtual control ν (λ = 1e3, ‖ν‖₁ via auxiliary η); hard box
+trust region in scaled units; ratio test ρ = actual/predicted on
+J = −z_N + λΣ|defects|.
+
+Gotchas hit:
+- Initial guess must satisfy the convex constraints (tilt cone, thrust
+  bounds) or the trust-region subproblems are infeasible: Hermite cubic
+  path (matches r, v at both ends) + controls projected into the set.
+- `coneprog` returns exitflag **−7** on subproblems that are actually
+  solved (residuals ~1e-11): accept when output.primal/dualfeasibility
+  and dualitygap < 1e-6.
+- Accept a step only if predicted > 0 (negative/negative gave a positive
+  ratio and accepted worse steps); converge when predicted < 1e-4·|J| and
+  max defect < 1e-6 (below that, cost changes are numerical noise).
+- Fly the plan as thrust **acceleration** (T = aCmd·m(t)), like boostback.
+
+Results (nominal RTLS ignition: 3 km, 355 m/s, 5225 kg): converges in 5
+iterations / 1.8 s; 16.9 s burn, 703 kg; defect 4e-9, relaxation gap 3e-5;
+tilt limit, thrust bounds (bang-bang 80–200 kN) and glide slope active.
+Replay in the guidance model: lands at 0.3 m/s. **Open-loop in the COESA
+plant: hits the ground at ~98 m/s** (exponential density 2–16 % too high
+below 3 km → plan expects more drag braking than exists). **Closed-loop
+replanning** (re-solve every 1 s from the plant state, plan frozen for the
+last 2.5 s): touchdown **5.4 m/s on the pad**. Open items: warm-start
+re-solves from the shifted previous plan (cold starts ~6 s each), shrink
+the frozen end window / terminal controller, then Simulink integration
+(periodic replanning, e.g. MATLAB Function at a fixed rate) and
+`mission_setup`/MC hookup. The placeholder `pdg_landing_guidance.m` is still
+what the model flies.
 
 ### Monte Carlo framework (built before Phase 3, reuse it)
 
