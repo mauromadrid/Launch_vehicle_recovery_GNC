@@ -330,9 +330,18 @@ samples each, seed 1, entry qMax 150 kPa; `results/mc_mission_site*`):
   (typically 155–164 kPa): the exponential guidance atmosphere
   under-predicts peak q by ~3–8%. RTLS outliers to 171 kPa are
   propellant-limited (entry burn clamped at the landing reserve, e.g.
-  42 kg left for it). Fix options: size to qMax/(1 + margin), or a
-  better onboard density model (piecewise exponential).
+  42 kg left for it). **Fixed with `p.entry.limitMargin = 0.10`**
+  (burn sized to qMax/1.1; heating limit is relative, so no margin there).
+  Check (3 cases, Simulink): peak q 163/154/156 → 148/140/142 kPa, all
+  within 150, for +130–170 kg entry propellant (−90–100 kg landing
+  margin). 0.10 is slightly conservative at 100 km (~6% under); 0.06–0.08
+  would also cover the observed error. Full MC not re-run.
 - Misses are **all negative** (systematic, same model error) → calibratable.
+  The margin does **not** fix this (misses −48/−63/−60 → −41/−27/−60 m):
+  the miss comes from the targeting predictor's exponential atmosphere,
+  not the entry-burn limit. Fix = better onboard density model (e.g.
+  piecewise exponential), which would also let the margin shrink, or a
+  calibrated aim offset.
 - 100 km: steeper FPA ⇒ cheaper boostback (ρ −0.74) but higher apogee
   (+0.98) ⇒ bigger entry burn (+0.93); landing margin driven by speed
   (−0.95).

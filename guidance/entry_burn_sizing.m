@@ -19,7 +19,9 @@ function eb = entry_burn_sizing(state, p)
 %                                                  (its no-burn value)
 %                  speed at ignition altitude   <= p.entry.vIgnitionMax
 %                every metric decreases monotonically with delta-v, so a
-%                bracketed 1D root find is reliable.
+%                bracketed 1D root find is reliable. The absolute limits
+%                (q, ignition speed) are tightened by p.entry.limitMargin
+%                to cover the guidance model's known under-prediction.
 %   The burn delta-v is the largest of those (all limits met).
 %
 %   Why size the burn to the limits and not lower: speed removed high up
@@ -50,11 +52,20 @@ mMin = p.dryMass + p.landingPropReserve;
 % zero makes "opposite to the velocity" flip direction every step.
 dvMax = max(min(c * log(m0 / mMin), norm(state(3:4))), 0);
 
+% Design margin on the absolute limits: the guidance model (exponential
+% atmosphere) under-predicts the plant's peak q by ~3-8%, so sizing to the
+% limit itself left almost every burned case above it. Size to
+% limit/(1 + margin) instead. The heating limit is relative to this same
+% model's no-burn prediction, so the model bias largely cancels there and
+% no margin is applied.
+margin = 0;
+if isfield(p.entry, 'limitMargin'), margin = p.entry.limitMargin; end
+
 noBurn = predictDescent(state, 0, p);
 limits = struct( ...
-    'qMax',         struct('field', 'qPeak',    'value', p.entry.qMax), ...
+    'qMax',         struct('field', 'qPeak',    'value', p.entry.qMax / (1 + margin)), ...
     'heatMaxRel',   struct('field', 'heatPeak', 'value', p.entry.heatMaxRel * noBurn.heatPeak), ...
-    'vIgnitionMax', struct('field', 'vIgnition','value', p.entry.vIgnitionMax));
+    'vIgnitionMax', struct('field', 'vIgnition','value', p.entry.vIgnitionMax / (1 + margin)));
 
 names = fieldnames(limits);
 dvByLimit = struct();

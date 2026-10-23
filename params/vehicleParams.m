@@ -102,6 +102,10 @@ p.entry.heatMaxRel    = Inf;     % [-]   peak heating index sqrt(rho)*V^3,
                                  %       relative to the same descent with
                                  %       no entry burn (e.g. 0.5 = halve it)
 p.entry.vIgnitionMax  = Inf;     % [m/s] speed at landing-burn ignition
+p.entry.limitMargin   = 0.10;    % [-]   size the burn to limit/(1+margin) on
+                                 %       the absolute limits (q, ignition
+                                 %       speed): the guidance atmosphere
+                                 %       under-predicts peak q by ~3-8%
 
 % --- Constraints (used by the guidance modules, Phases 2-3) ---
 p.maxTiltAngle    = deg2rad(20);  % [rad] landing burn: max thrust angle

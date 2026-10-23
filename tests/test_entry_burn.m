@@ -37,7 +37,8 @@ eb = entry_burn_sizing(testCase.TestData.state, p);
 testCase.verifyTrue(eb.feasible);
 testCase.verifyEqual(eb.binding, "qMax");
 testCase.verifyGreaterThan(eb.dv, 0);
-testCase.verifyEqual(eb.predicted.qPeak, p.entry.qMax, 'RelTol', 0.01);
+% the burn is sized to the limit tightened by the design margin
+testCase.verifyEqual(eb.predicted.qPeak, p.entry.qMax / (1 + p.entry.limitMargin), 'RelTol', 0.01);
 end
 
 function testMostRestrictiveLimitWins(testCase)
