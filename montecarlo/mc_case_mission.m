@@ -14,10 +14,17 @@ function m = mc_case_mission(p)
 %     aimBias         targeting bias for drag + entry burn [m]
 %     entrySized      entry burn was sized and flown
 %     propEntry       entry-burn propellant [kg]
-%     qPeak           peak dynamic pressure over the descent [Pa]
+%   Flight loads (flight_loads: separation to landing-burn ignition):
+%     qPeak           max dynamic pressure, max-Q [Pa]
+%     maxQAltitude    altitude of max-Q [m];  maxQMach  Mach at max-Q
 %     entryLimitMet   qPeak <= p.entry.qMax in the plant (the sizing uses the
 %                     guidance model, which under-predicts by a few %)
+%     nAxialMax       peak sensed/axial acceleration [g] (overall), and
+%     nAxialBoostback, nAxialDescent  its peak per phase [g]
 %     heatPeak        peak heating index sqrt(rho)*V^3 (relative units)
+%     heatFluxMax     peak Sutton-Graves stagnation heat flux [W/m^2]
+%                     (assumed nose radius: order of magnitude only)
+%     heatLoad        integrated heat load [J/m^2]
 %     apogee          max altitude after boostback cutoff [m]
 %     ignitionMissX   downrange miss at landing-burn ignition altitude [m]
 %     ignitionSpeed   speed there [m/s]
@@ -28,7 +35,9 @@ function m = mc_case_mission(p)
 
 m = struct('feasible', false, 'burnTime', NaN, 'propBoostback', NaN, ...
     'aimBias', NaN, 'entrySized', false, 'propEntry', NaN, 'qPeak', NaN, ...
-    'entryLimitMet', false, 'heatPeak', NaN, 'apogee', NaN, ...
+    'maxQAltitude', NaN, 'maxQMach', NaN, 'entryLimitMet', false, ...
+    'nAxialMax', NaN, 'nAxialBoostback', NaN, 'nAxialDescent', NaN, ...
+    'heatPeak', NaN, 'heatFluxMax', NaN, 'heatLoad', NaN, 'apogee', NaN, ...
     'ignitionMissX', NaN, 'ignitionSpeed', NaN, 'propAtIgnition', NaN, ...
     'landingMargin', NaN, 'simTime', NaN);
 
@@ -43,13 +52,7 @@ end
 
 t = flight.t; X = flight.X; ev = flight.ev;
 after = t >= ev.tCutoff;
-
-q = zeros(size(t)); heat = q;
-for i = find(after)'
-    [~, in] = dragAcceleration(X(i,:)', p);
-    q(i) = in.q; heat(i) = in.heat;
-end
-upToIgnition = after & t <= ev.tIgnite;
+loads = flight_loads(flight, p);
 
 m.feasible      = true;
 m.burnTime      = flight.bb.duration;
@@ -61,9 +64,16 @@ if m.entrySized
     mBefore = interp1(t, X(:,5), ev.tEntry(1) - 1e-6);
     m.propEntry = mBefore - flight.mCutoff;
 end
-m.qPeak         = max(q(upToIgnition));
+m.qPeak         = loads.maxQ;
+m.maxQAltitude  = loads.maxQAltitude;
+m.maxQMach      = loads.maxQMach;
 m.entryLimitMet = m.qPeak <= p.entry.qMax;
-m.heatPeak      = max(heat(upToIgnition));
+m.nAxialMax     = loads.nAxialMax;
+m.nAxialBoostback = loads.nAxialMaxBoostback;
+m.nAxialDescent = loads.nAxialMaxDescent;
+m.heatPeak      = loads.heatIdxMax;
+m.heatFluxMax   = loads.heatFluxMax;
+m.heatLoad      = loads.heatLoad;
 m.apogee        = max(X(after, 2));
 ign = flight.ignition;
 m.ignitionMissX = ign(1) - p.target.x;

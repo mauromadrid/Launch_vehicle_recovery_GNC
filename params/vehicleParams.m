@@ -68,6 +68,9 @@ p.landingIgniteAltitude = 3000;  % [m] altitude at which the landing
 % databases, e.g. DLR's CALLISTO and the EU RETALT project.
 p.aero.dragEnabled = true;       % false = vacuum plant (for comparisons/tests)
 p.aero.diameter    = 1.5;        % [m] reference diameter (A_ref: deriveParams)
+p.aero.effectiveNoseRadius = 0.75; % [m] ASSUMED, for the Sutton-Graves heat-flux
+                                 %     estimate only (= base radius; the stage
+                                 %     leads with a blunt engine section)
 p.aero.mach = [0    0.5  0.8  1.0  1.2  1.5  2.0  3.0  5.0  10  ];
 p.aero.CD   = [0.80 0.82 0.90 1.20 1.45 1.50 1.45 1.35 1.30 1.28];
 
