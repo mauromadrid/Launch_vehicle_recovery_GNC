@@ -387,6 +387,17 @@ samples each, seed 1, entry qMax 150 kPa; `results/mc_mission_site*`):
 - Uniform sampling ⇒ histograms show spread over the swept range, not
   flight probabilities (Phase 5 needs realistic distributions).
 
+**Flight-loads MC** (2026-10-25; `sim/flight_loads.m`, metrics in
+`mc_case_mission`; 2 × 100 missions, same dispersions, limitMargin 0.10;
+`results/mc_mission_loads_site*`): window = separation → landing-burn
+ignition. RTLS (89/100 feasible): max-Q 119–160 kPa (median 148) at ~11 km,
+Mach 2.8–3.2; axial 2.8–4.0 g boostback, 5.9–8.1 g descent; Sutton-Graves
+heat flux ~100–158 kW/m² (assumed Rn = 0.75 m, order of magnitude); 84/89
+within 150 kPa (5 propellant-limited). 100 km (100/100): max-Q 78–143 kPa,
+all within limit. q is ~0.2–0.3 kPa at separation/entry start (thin air) —
+independently recomputed from ½ρ‖v‖², identical; the user initially
+expected max-Q at entry, explanation: density rises ~2500× from 60 to 11 km.
+
 ### Phase 4 as implemented so far: drag in the plant + effect study
 
 Done: drag in both plants; guidance unchanged (still vacuum). Decisions:
