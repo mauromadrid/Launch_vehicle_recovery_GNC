@@ -10,7 +10,8 @@ powered-descent guidance algorithms.
 ![Full mission in the Simulink model: trajectory and time histories](docs/images/mission_overview.png)
 
 *Nominal return to the launch site, flown in the Simulink model: trajectory
-coloured by flight phase, thrust with engine limits, inertial load,
+coloured by flight phase with a zoom on the landing burn (the last 3 km),
+thrust with engine limits, inertial load,
 thrust angle, speed, dynamic pressure and heating, each with its limit.*
 
 ## Results at a glance

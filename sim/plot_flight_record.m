@@ -8,6 +8,7 @@ function fig = plot_flight_record(src, opts)
 %   plot_flight_record(..., Panels=["thrust" "dynPressure" "mach"])
 %   plot_flight_record(..., Trajectory=false)
 %   plot_flight_record(..., Title="Nominal return")  % custom figure title
+%   plot_flight_record(..., LandingZoom=false)       % no terminal-descent inset
 %
 %   Layout: the trajectory (downrange vs altitude, coloured by flight
 %   phase, events marked) across the top, then one panel per signal name in
@@ -22,6 +23,7 @@ arguments
                                 "speed", "dynPressure", "heatIndex"]
     opts.Trajectory (1,1) logical = true
     opts.Title (1,1) string = ""          % default: record name, source, date, code version
+    opts.LandingZoom (1,1) logical = true % inset of the terminal descent (if there is a landing burn)
 end
 
 if isstruct(src)
@@ -41,7 +43,7 @@ nPanels = numel(opts.Panels);
 nRows = ceil(nPanels / 2) + opts.Trajectory;
 
 fig = figure('Name', "Flight record: " + rec.meta.name, 'Position', [60 40 1150 240 * nRows + 60]);
-tl = tiledlayout(nRows, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+tl = tiledlayout(nRows, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
 if strlength(opts.Title) > 0
     title(tl, opts.Title, 'Interpreter', 'none');
 else
@@ -51,7 +53,8 @@ end
 
 % ---- Trajectory ----
 if opts.Trajectory
-    ax = nexttile(tl, [1 2]); hold(ax, 'on');
+    iZoom = terminalDescent(rec, opts.LandingZoom);
+    ax = nexttile(tl, [1 4 - ~isempty(iZoom)]); hold(ax, 'on');
     xd = displayOf(rec, "x"); yd = displayOf(rec, "altitude");
     for ph = categories(sig.phase)'
         sel = sig.phase == ph{1};
@@ -71,6 +74,7 @@ if opts.Trajectory
         if isempty(i), i = numel(t); end
         plot(ax, sig.x(i) * xd.displayScale, sig.altitude(i) * yd.displayScale, 'o', ...
              'MarkerSize', 5, 'Color', refColor, 'HandleVisibility', 'off');
+        if ismember(i, iZoom), continue, end     % labelled in the zoom instead
         text(ax, sig.x(i) * xd.displayScale, sig.altitude(i) * yd.displayScale, ...
              "  " + rec.events.name(k), 'FontSize', 8, 'Color', refColor);
     end
@@ -78,7 +82,10 @@ if opts.Trajectory
     xlabel(ax, sprintf('%s [%s]', xd.description, xd.displayUnit));
     ylabel(ax, sprintf('%s [%s]', yd.description, yd.displayUnit));
     title(ax, 'Trajectory');
-    legend(ax, 'Location', 'bestoutside');
+    legend(ax, 'Location', 'best');
+    if ~isempty(iZoom)
+        plotTerminalZoom(nexttile(tl), rec, iZoom, phaseColors, refColor);
+    end
 end
 
 % ---- Time histories ----
@@ -90,7 +97,7 @@ for k = 1:nPanels
             strjoin(setdiff(string(sig.Properties.VariableNames), ["t" "phase"]), ', '));
     end
     d = displayOf(rec, name);
-    ax = nexttile(tl); hold(ax, 'on');
+    ax = nexttile(tl, [1 2]); hold(ax, 'on');
     colorOrder = get(groot, 'defaultAxesColorOrder');
     drawSeries(ax, t, sig.(name) * d.displayScale, d.plotStyle, '-', 1.6, ...
                colorOrder(1,:), d.description);
@@ -130,6 +137,48 @@ if isempty(k)
 else
     d = rec.display(k);
 end
+end
+
+function iZoom = terminalDescent(rec, enabled)
+% Samples of the final descent from just above landing-burn ignition: the
+% landing burn spans a few km of a ~150 km trajectory, invisible at full scale.
+iZoom = [];
+sig = rec.signals;
+iIgn = find(sig.phase == "landing burn", 1);
+if ~enabled || isempty(iIgn), return, end
+zoomTop = 1.3 * sig.altitude(iIgn);
+i0 = find(sig.altitude(1:iIgn) > zoomTop, 1, 'last');
+if isempty(i0), i0 = 1; end
+iZoom = (i0:height(sig))';
+end
+
+function plotTerminalZoom(ax, rec, iZoom, phaseColors, refColor)
+% Terminal descent in metres relative to the pad, in its own tile.
+sig = rec.signals;
+xPad = 0;
+if isfield(rec.params, 'target'), xPad = rec.params.target.x; end
+hold(ax, 'on');
+x = sig.x(iZoom) - xPad; y = sig.altitude(iZoom); ph = sig.phase(iZoom);
+for c = categories(ph)'
+    sel = ph == c{1};
+    if ~any(sel), continue, end
+    xs = x; ys = y; xs(~sel) = NaN; ys(~sel) = NaN;
+    plot(ax, xs, ys, 'LineWidth', 1.8, 'Color', phaseColors(c{1}));
+end
+plot(ax, 0, 0, 's', 'MarkerSize', 7, 'Color', [0.85 0.2 0.2], 'MarkerFaceColor', [0.85 0.2 0.2]);
+t = sig.t;
+for k = 2:height(rec.events)
+    i = find(t >= rec.events.t(k), 1);
+    if isempty(i), i = numel(t); end
+    if ~ismember(i, iZoom), continue, end
+    plot(ax, sig.x(i) - xPad, sig.altitude(i), 'o', 'MarkerSize', 5, 'Color', refColor);
+    text(ax, sig.x(i) - xPad, sig.altitude(i), "  " + rec.events.name(k), ...
+         'FontSize', 8, 'Color', refColor, 'VerticalAlignment', 'bottom');
+end
+grid(ax, 'on');
+xlabel(ax, 'Downrange from landing site [m]');
+ylabel(ax, 'Altitude [m]');
+title(ax, 'Terminal descent (zoom)');
 end
 
 function drawSeries(ax, t, y, style, lineSpec, width, color, label)
