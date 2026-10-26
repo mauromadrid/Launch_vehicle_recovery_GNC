@@ -54,8 +54,12 @@ fprintf('Landing burn span   : %.1f s (event-terminated at touchdown if reached)
 fprintf('Final state [x y vx vy m]:\n');
 disp(y(end,:));
 
-%% Plots
+%% Save the flight as a record, then plot from the file
 ev.tCutoff = tA(end);
 ev.tIgnite = tA(end) + tB(end);
 ev.tEntry  = tA(end) + traj.tEntry;   % [] if no entry burn
-plot_return_trajectory(t, y, T, theta, p, ev, 'Booster Return - MATLAB Open-Loop Demo');
+raw = struct('t', t, 'X', y, 'T', T, 'theta', theta, 'ev', ev);
+rec = make_flight_record(raw, p, Name="prototype", Source="MATLAB prototype");
+file = save_flight_record(rec);
+fprintf('Saved flight record: %s\n', file);
+plot_flight_record(file);

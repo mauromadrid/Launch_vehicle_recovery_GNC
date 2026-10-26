@@ -116,12 +116,31 @@ ignition to ~0.3 m). Both fly the targeted convex boostback, the drag
 coast with the entry burn, and the placeholder landing burn — so neither
 lands softly yet (Phase 3).
 
-## Plots
+## Results files and plots
 
-Both runners produce the same figure (`sim/plot_return_trajectory.m`):
-trajectory coloured by phase with launch site / landing site / aimed
-ignition point, altitude, speed, thrust magnitude (with boostback thrust
-bounds), flight-path angle vs thrust angle, mass, and thrust acceleration.
+Running and plotting are decoupled. A run saves the flight as a
+self-describing **flight record** in `results/flights/<name>_<timestamp>.mat`
+(signals table with units, limits, events, flight phase, parameters, the
+git commit of the code); plotting reads only those files.
+
+```matlab
+run simulink/run_and_plot.m         % run the nominal mission, save, plot
+plot_flight_record()                % plot the most recent record (no simulation)
+plot_flight_record("nominal")       % most recent "nominal*" record
+plot_flight_record(file, Panels=["thrust" "mach" "heatFlux"])
+rec = load_flight_record(file);     % the data itself (rec.signals is a table)
+```
+
+Default figure: trajectory (downrange vs altitude, coloured by phase,
+events marked) plus thrust (with T_min/T_max of the active engine
+configuration), inertial (sensed) acceleration in g, thrust angle, speed,
+dynamic pressure (with the entry-burn limit) and the heating index (with
+its limit, when one is active).
+
+**Adding a variable** (new DoF, control, load): add one entry to
+`sim/flight_signal_defs.m` (name, description, units, how to compute it,
+optional limits). It is then stored in every new record and can be named in
+`Panels`. Records keep their own display info, so old files still plot.
 
 ## Choosing the landing site
 

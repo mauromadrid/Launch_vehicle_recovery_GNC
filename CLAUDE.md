@@ -308,6 +308,31 @@ the frozen end window / terminal controller, then Simulink integration
 `mission_setup`/MC hookup. The placeholder `pdg_landing_guidance.m` is still
 what the model flies.
 
+### Results files and plotting (decoupled)
+
+User requirement: simulations store data in files; plots read only files.
+- `make_flight_record(raw, p)` → record: `signals` table (t + one column per
+  catalog signal, SI, VariableUnits/Descriptions, `phase` categorical),
+  `limits` (per-signal lower/upper columns; thrust limits follow the active
+  engine configuration per phase, NaN while coasting), `events` table,
+  `display` (units/scales/styles copied in, so old files plot after catalog
+  changes), `meta` (name, source, created, git commit "+modified" if the
+  tree was dirty), `params`, `schemaVersion` = 1.
+- `raw` = struct t, X, T, theta, ev — simulate_mission's output as is; the
+  MATLAB prototype builds the same.
+- **Scaling**: new variable = one entry in `sim/flight_signal_defs.m`
+  (compute fcn from raw/aux/p, units, display, limits). For new DoFs, add
+  the states to `raw` and their signals to the catalog.
+- `save_flight_record` → `results/flights/` (gitignored);
+  `load_flight_record` (latest / by prefix); `plot_flight_record(src,
+  Panels=...)`. `run_and_plot` and `run_open_loop_demo` both save + plot
+  from the file. `plot_return_trajectory` was removed.
+- Heat-index limit line appears only when `p.entry.heatMaxRel` is finite
+  AND the record has the no-burn reference peak (not available yet) —
+  currently the panel says "no limit active". Open question for the user.
+- Monte Carlo cases don't save per-flight records yet (would be one line in
+  `mc_case_mission`, but 200 records ≈ hundreds of MB — decide first).
+
 ### Monte Carlo framework (built before Phase 3, reuse it)
 
 `montecarlo/` (see README table): catalog → select → sample (seeded LHS) →
