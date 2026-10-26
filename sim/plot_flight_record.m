@@ -7,6 +7,7 @@ function fig = plot_flight_record(src, opts)
 %   plot_flight_record(rec)                   % a record already in memory
 %   plot_flight_record(..., Panels=["thrust" "dynPressure" "mach"])
 %   plot_flight_record(..., Trajectory=false)
+%   plot_flight_record(..., Title="Nominal return")  % custom figure title
 %
 %   Layout: the trajectory (downrange vs altitude, coloured by flight
 %   phase, events marked) across the top, then one panel per signal name in
@@ -20,6 +21,7 @@ arguments
     opts.Panels (1,:) string = ["thrust", "loadFactor", "thrustAngle", ...
                                 "speed", "dynPressure", "heatIndex"]
     opts.Trajectory (1,1) logical = true
+    opts.Title (1,1) string = ""          % default: record name, source, date, code version
 end
 
 if isstruct(src)
@@ -40,8 +42,12 @@ nRows = ceil(nPanels / 2) + opts.Trajectory;
 
 fig = figure('Name', "Flight record: " + rec.meta.name, 'Position', [60 40 1150 240 * nRows + 60]);
 tl = tiledlayout(nRows, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
-title(tl, sprintf('%s  (%s, %s, code %s)', rec.meta.name, rec.meta.source, ...
-      string(rec.meta.created, 'yyyy-MM-dd HH:mm'), rec.meta.gitCommit), 'Interpreter', 'none');
+if strlength(opts.Title) > 0
+    title(tl, opts.Title, 'Interpreter', 'none');
+else
+    title(tl, sprintf('%s  (%s, %s, code %s)', rec.meta.name, rec.meta.source, ...
+          string(rec.meta.created, 'yyyy-MM-dd HH:mm'), rec.meta.gitCommit), 'Interpreter', 'none');
+end
 
 % ---- Trajectory ----
 if opts.Trajectory

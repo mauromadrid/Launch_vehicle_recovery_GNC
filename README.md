@@ -162,3 +162,7 @@ results/     generated data (not version-controlled)
 ## Author
 
 Mauro Madrid — portfolio project in guidance, navigation & control.
+
+Developed with the help of an AI coding assistant (Claude Code) in a
+pair-programming style: the design decisions, direction and review of
+results are the author's.

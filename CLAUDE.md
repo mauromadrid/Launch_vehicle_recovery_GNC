@@ -19,6 +19,73 @@ roles (Munich area; motivating example: Isar Aerospace's working-student GNC
 postings, which explicitly mention "GNC algorithms for reusability scenarios,
 trajectory optimization, Monte Carlo analysis, MATLAB/Simulink").
 
+## Handover — read this first (state as of 2026-10-26)
+
+**Where things stand.** The full mission works end to end in the Simulink
+model (`simulate_mission`): convex boostback + targeting → drag coast →
+entry burn sized in flight → SCvx landing burn re-planned in flight →
+touchdown 0.83 m/s on the pad (nominal RTLS). 49 tests pass
+(`runtests('tests')`, a few minutes: the Simulink tests fly real missions).
+README rewritten for GitHub with figures in `docs/images/`.
+
+**Open items, in priority order:**
+1. Re-run the Monte Carlo with the landing guidance and the new atmosphere
+   table (touchdown metrics now exist in `mc_case_mission`); ~1 min per
+   mission now → 200 missions ≈ 3–4 h, run in a separate `matlab -batch`
+   process. **Ask the user before launching long runs** (they have asked to
+   hold MC runs before). Then refresh `docs/images/mc_feasibility_maxq.png`
+   (its README caption says it predates the landing guidance).
+2. Re-check `p.entry.limitMargin = 0.10`: with the accurate atmosphere table
+   the nominal max-Q is 139 kPa vs the 150 kPa limit (~7 % under) — likely
+   over-conservative now; 0.03–0.05 may suffice. Also re-measure the
+   boostback-targeting miss (was −30…−60 m with the exponential).
+3. Faster landing re-plans (warm starts take 4–12 SCvx iterations, ~1–3 s):
+   iteration cap / looser tolerance for re-plans, fewer nodes late.
+4. Roadmap: realistic dispersions (Phase 5), attitude dynamics + cascaded
+   attitude controller, drag inside the boostback optimizer.
+
+**How the user likes to work.** Portfolio project for GNC roles; the user
+is learning (new to SOCP/SCvx) and asks "why" questions — explain concepts
+clearly, with the project's own numbers. Wants honest status (no
+overclaiming), labelled axes with units, decoupled run/plot (flight records),
+the Monte Carlo flying the real Simulink model, and confirmation before
+publishing or long computations. The user makes the design calls; offer a
+recommendation, don't silently decide big things.
+
+**Repository / files.**
+- Git, branch `main`, remote
+  `https://mauromadrid@github.com/mauromadrid/Launch_vehicle_recovery_GNC.git`
+  (username in the URL on purpose: Windows has a cached login for another
+  account, `mmadridpenarru`, which caused a 403). The user pushes; ask
+  before pushing for them. Commit messages end with the Co-Authored-By line.
+- **Uncommitted on purpose:** `params/vehicleParams.m` has the user's local
+  `p.target.x = 100e3` (committed value is 0 = RTLS) — when committing
+  other changes to that file, stage HEAD + intended edits only (e.g. write
+  the staged version with `p.target.x = 0` and `git update-index
+  --cacheinfo`). `PROJECT_SUMMARY_FOR_CV.md` and `PROJECT_UPDATE_FOR_CV.md`
+  are the user's CV briefings for another chat: keep untracked; update the
+  UPDATE file when the user asks what changed.
+- `results/` (gitignored): `results/flights/` flight records,
+  `results/mc_mission_*.mat` Monte Carlo results.
+
+**MATLAB connection (MCP).**
+- `mcp__matlab__*` (Simulink agentic toolkit) attaches to a *shared*
+  MATLAB session. After MATLAB restarts it reports "failed to attach";
+  fix: in that MATLAB run `shareMATLABSession` and
+  `addpath(genpath(fullfile(getenv('USERPROFILE'),'.matlab','agentic-toolkits','simulink','tools')))`
+  (the second is needed for the model_* tools). The desktop-extension
+  connector `mcp__MATLAB__evaluate_matlab_code` usually still works and can
+  run those two lines. There may be two MATLAB processes (one per connector).
+- Fallback that always works: write a script and run
+  `"/c/Program Files/MATLAB/R2026a/bin/matlab" -batch "script"` via Bash
+  (~30 s startup; Bash tool timeout max 10 min → use run_in_background +
+  Monitor for longer). For parallel batch processes running Simulink, give
+  each its own cache: `Simulink.fileGenControl('set','CacheFolder',dir,
+  'CodeGenFolder',dir,'createDir',true)`. Note `run_open_loop_demo` calls
+  `clear`, which wipes the calling script's variables.
+- A Simulink mission takes ~1 min wall time now (landing re-plans); the
+  first run in a session adds compile time.
+
 ## Current state (full mission works end to end in Simulink: boostback, coast, entry burn, landing with soft touchdown)
 
 Two parallel implementations of the same Phase 1 physics exist, deliberately:
@@ -268,7 +335,7 @@ the shortcut); touchdown v = 0; fixed 3 km ignition for v1; no separate
 min-landing-error fallback (non-zero virtual control flags infeasibility).
 
 Formulation: same LCvx variables as boostback (u = T/m, σ, z = ln m/m0),
-plus drag (guidance model: exponential atmosphere) in nonlinear dynamics;
+plus drag (guidance model: onboard atmosphere table, `guidance_density`; was a single exponential until 2026-10-26) in nonlinear dynamics;
 **normalized time τ ∈ [0,1], burn duration s a decision variable** (time
 dilation → no outer burn-time search); landing-engine thrust bounds
 (Taylor about the reference z̄); pointing ≤ 20° from vertical; glide slope
@@ -380,13 +447,14 @@ them up automatically. (History: the first case function,
 silently drifted from the demo when targeting was added — removed.)
 
 **How the Simulink run gets the sampled p**: `simulate_mission` computes
-`[bb, ld] = mission_setup(p)` and passes `p`, `bb`, `ld` through a
+`bb = mission_setup(p)` and passes `p` and `bb` through a
 `Simulink.SimulationInput` (`setVariable`) with
 `setModelParameter('InitFcn', '')` — the InitFcn (interactive runs)
 would otherwise rebuild them from `vehicleParams()` and discard the
 dispersion. Tested (`test_simulate_mission`: the flown initial state and
-target are the ones passed in). ~14 s for the first run (compile), ~6 s
-per case after; infeasible boostbacks ~12 s. Decisions and why:
+target are the ones passed in). Timing: before the landing guidance,
+~14 s for the first run (compile) and ~6 s per case; with in-flight
+landing re-plans a mission now takes **~1 min**. Decisions and why:
 
 - Derived params live in `params/deriveParams.m` and are recomputed after
   every dispersion — otherwise dispersing dryMass/thrust would leave m0 and
@@ -439,7 +507,9 @@ samples each, seed 1, entry qMax 150 kPa; `results/mc_mission_site*`):
   the miss comes from the targeting predictor's exponential atmosphere,
   not the entry-burn limit. Fix = better onboard density model (e.g.
   piecewise exponential), which would also let the margin shrink, or a
-  calibrated aim offset.
+  calibrated aim offset. **Done since** (2026-10-26): onboard atmosphere
+  table `guidance_density` — the miss and the margin have not been
+  re-measured with it yet (see Handover).
 - 100 km: steeper FPA ⇒ cheaper boostback (ρ −0.74) but higher apogee
   (+0.98) ⇒ bigger entry burn (+0.93); landing margin driven by speed
   (−0.95).
@@ -459,12 +529,15 @@ expected max-Q at entry, explanation: density rises ~2500× from 60 to 11 km.
 
 ### Phase 4 as implemented so far: drag in the plant + effect study
 
-Done: drag in both plants; guidance unchanged (still vacuum). Decisions:
+Done: drag in both plants (at the time the guidance was still vacuum; the drag-aware targeting, entry burn and SCvx landing came later). Decisions:
 
 - **Atmosphere split**: plant = COESA 1976 (`atmoscoesa` / Aerospace
-  Blockset "COESA Atmosphere Model" block); guidance/bias estimator (not
-  built yet) = exponential fit `p.atmo.rho0 = 1.4168`, `p.atmo.H = 7008 m`
-  (0–80 km least squares, density within ±23% — deliberate model mismatch).
+  Blockset "COESA Atmosphere Model" block); guidance = **onboard atmosphere
+  table** (`guidance/guidance_density.m`, COESA every 5 km, log-linear;
+  0.8 % below 5 km, 2.5 % worst). History: until 2026-10-26 the guidance
+  used one exponential fit over 0–80 km (rho0 1.4168, H 7008 m; ±23 %,
+  10–16 % too dense near the ground) — the findings below that mention the
+  exponential were measured with it.
 - COESA's extrapolation above 86 km drives temperature negative near
   175 km (NaN speed of sound; MC apogees reach 220 km), so altitude into it
   is clamped at `p.atmo.maxAltitude = 150 km` (density ~3e-14, drag ~0),
@@ -509,7 +582,7 @@ Done: drag in both plants; guidance unchanged (still vacuum). Decisions:
 Agreed design: **fixed start altitude** (`p.entry.startAltitude`, 60 km),
 retrograde at full thrust (`p.nEnginesEntry`), Δv sized **online at burn
 start** from the measured state by `guidance/entry_burn_sizing.m`:
-numerical predictor (guidance model: exponential atmosphere, constant
+numerical predictor (guidance model: onboard atmosphere table, constant
 speed of sound `p.atmo.soundSpeed`, the CD table) + `fzero` for the
 **minimum Δv meeting each active limit** — peak q (`p.entry.qMax`), peak
 heating index √ρ·V³ relative to no burn (`p.entry.heatMaxRel`), speed at
@@ -577,8 +650,8 @@ to measure the unbiased effect.
 Results (COESA plant, qMax 150 kPa): converges in 1–2 iterations (~9 s,
 ≤ 7 kg extra propellant). RTLS + entry burn: plant miss +641 m → −48 m;
 100 km site: −93 m → −63 m. The residual ~50–70 m is the exponential-vs-
-COESA density model error; a better onboard density model (e.g. piecewise
-exponential) would shrink it, but it's already small for the landing burn.
+COESA density model error (measured before the onboard atmosphere table
+replaced the exponential; not yet re-measured).
 
 ### Phase 4: Atmosphere & aerodynamics (drag) — original design notes
 
