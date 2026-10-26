@@ -110,6 +110,13 @@ p.entry.limitMargin   = 0.10;    % [-]   size the burn to limit/(1+margin) on
                                  %       speed): the guidance atmosphere
                                  %       under-predicts peak q by ~3-8%
 
+% --- Load limits for DISPLAY ONLY (plots; not used by any guidance) ---
+p.loads.heatFluxMax = 150e3;     % [W/m^2] illustrative stagnation heat-flux
+                                 %   limit (Sutton-Graves estimate, see
+                                 %   flight_signal_defs). Nominal RTLS peaks
+                                 %   at ~126 kW/m^2 with the entry burn,
+                                 %   ~227 without.
+
 % --- Constraints (used by the guidance modules, Phases 2-3) ---
 p.maxTiltAngle    = deg2rad(20);  % [rad] landing burn: max thrust angle
                                     %       from the vehicle's vertical axis

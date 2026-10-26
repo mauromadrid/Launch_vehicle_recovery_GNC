@@ -327,7 +327,7 @@ User requirement: simulations store data in files; plots read only files.
   `load_flight_record` (latest / by prefix); `plot_flight_record(src,
   Panels=...)`. `run_and_plot` and `run_open_loop_demo` both save + plot
   from the file. `plot_return_trajectory` was removed.
-- Heat-index limit line appears only when `p.entry.heatMaxRel` is finite
+- Heating limit (display only, user choice): `p.loads.heatFluxMax` = 150 kW/m² on the heat-flux panel and, converted (×√Rn/1.7415e-4), on the heating-index panel. Previously: line only when `p.entry.heatMaxRel` is finite
   AND the record has the no-burn reference peak (not available yet) —
   currently the panel says "no limit active". Open question for the user.
 - Monte Carlo cases don't save per-flight records yet (would be one line in

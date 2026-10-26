@@ -53,8 +53,15 @@ defs(k).plotStyle = "stairs";
 k = find([defs.name] == "dynPressure");
 defs(k).upper = @(r,a,p) qLimit(p);    defs(k).upperLabel = "q limit (entry burn)";
 
+% Heating: one display limit, p.loads.heatFluxMax [W/m^2], drawn on both
+% the heat-flux panel and (converted by the Sutton-Graves constant) the
+% heating-index panel.
+k = find([defs.name] == "heatFlux");
+defs(k).upper = @(r,a,p) heatFluxLimit(p);
+defs(k).upperLabel = "heat-flux limit (display)";
 k = find([defs.name] == "heatIndex");
-defs(k).upper = @(r,a,p) heatLimit(a, p); defs(k).upperLabel = "heating limit";
+defs(k).upper = @(r,a,p) heatLimit(a, p);
+defs(k).upperLabel = "heating limit (display)";
 
 k = find([defs.name] == "thrustAngle");
 defs(k).plotStyle = "stairs";
@@ -74,11 +81,21 @@ if isfield(p, 'entry') && p.entry.enabled && isfinite(p.entry.qMax)
 end
 end
 
+function q = heatFluxLimit(p)
+% Display-only absolute heat-flux limit [W/m^2]
+q = NaN;
+if isfield(p, 'loads') && isfield(p.loads, 'heatFluxMax')
+    q = p.loads.heatFluxMax;
+end
+end
+
 function h = heatLimit(a, p)
-% The entry-burn heating limit is relative to the no-burn peak heating
-% index; an absolute line needs that reference (aux.heatIdxNoBurnPeak).
-h = NaN;
-if isfield(p, 'entry') && p.entry.enabled && isfinite(p.entry.heatMaxRel) ...
+% Heating-index limit: the display heat-flux limit converted to index units
+% (qdot = 1.7415e-4 * sqrt(rho/Rn) * V^3 = 1.7415e-4/sqrt(Rn) * index).
+% Falls back to the entry burn's relative limit if there is no display
+% limit and the record carries the no-burn reference peak.
+h = heatFluxLimit(p) * sqrt(p.aero.effectiveNoseRadius) / 1.7415e-4;
+if isnan(h) && isfield(p, 'entry') && p.entry.enabled && isfinite(p.entry.heatMaxRel) ...
         && isfield(a, 'heatIdxNoBurnPeak') && isfinite(a.heatIdxNoBurnPeak)
     h = p.entry.heatMaxRel * a.heatIdxNoBurnPeak;
 end

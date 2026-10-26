@@ -52,6 +52,16 @@ testCase.verifyTrue(all(isnan(lim.upper(t > 10 & t < 35))));       % coast: no l
 testCase.verifyEqual(string(rec.signals.phase(t == 20)), "coast");
 end
 
+function testHeatingDisplayLimit(testCase)
+% One display limit, p.loads.heatFluxMax, on both heating panels: the
+% heating-index line converted back with the Sutton-Graves constant must
+% equal the heat-flux line.
+rec = testCase.TestData.rec; p = testCase.TestData.p;
+testCase.verifyEqual(rec.limits.heatFlux.upper, repmat(p.loads.heatFluxMax, height(rec.signals), 1));
+backToFlux = rec.limits.heatIndex.upper * 1.7415e-4 / sqrt(p.aero.effectiveNoseRadius);
+testCase.verifyEqual(backToFlux, rec.limits.heatFlux.upper, 'RelTol', 1e-12);
+end
+
 function testEvents(testCase)
 ev = testCase.TestData.rec.events;
 testCase.verifyEqual(ev.name(1:2), ["Separation"; "Boostback cutoff"]);
