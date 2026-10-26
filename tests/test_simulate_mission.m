@@ -7,7 +7,6 @@ end
 
 function setupOnce(testCase)
 addpath(genpath(fileparts(fileparts(mfilename('fullpath')))));
-warning('off', 'pdg_landing_guidance:placeholder');
 p = vehicleParams();
 p.target.x = 0;                 % RTLS, whatever vehicleParams says locally
 testCase.TestData.p = p;
@@ -30,6 +29,18 @@ testCase.verifyTrue(fl.entrySized);
 testCase.verifyNotEmpty(fl.ev.tEntry);
 iAfter = find(fl.t > fl.ev.tEntry(2), 1);
 testCase.verifyEqual(fl.X(iAfter, 5), fl.mCutoff, 'RelTol', 1e-6);
+end
+
+function testLandsSoftlyOnThePad(testCase)
+% Full mission in the Simulink model, landing guidance re-planned in
+% flight: soft touchdown on the pad (measured 0.83 m/s, x ~ 0 m when this
+% test was written).
+p = testCase.TestData.p; fl = testCase.TestData.flight;
+td = fl.touchdown;
+testCase.verifyLessThan(norm(td(3:4)), 2);              % < 2 m/s
+testCase.verifyLessThan(abs(td(1) - p.target.x), 5);    % within 5 m
+testCase.verifyGreaterThan(td(5), p.dryMass);           % propellant left
+testCase.verifyGreaterThan(numel(fl.landingPlanTimes), 1);   % it did re-plan
 end
 
 function testMonteCarloCaseMetrics(testCase)

@@ -1,14 +1,11 @@
 function L = flight_loads(flight, p)
 %FLIGHT_LOADS Flight-loads time histories and peaks along a simulated
-%   mission (simulate_mission output), from separation to landing-burn
-%   ignition.
+%   mission (simulate_mission output), from separation to touchdown.
 %
 %   L = flight_loads(flight, p)
 %
-%   Window: t <= landing-burn ignition. That covers the boostback, coast,
-%   entry burn and drag-braked descent, where max-Q, peak heating and peak
-%   deceleration occur. The landing burn is excluded while the Simulink
-%   model still flies a placeholder there.
+%   Window: the whole flight (boostback, coast, entry burn, drag-braked
+%   descent, landing burn). "Descent" peaks include the landing burn.
 %
 %   Quantities (point-mass model, see notes):
 %     q        dynamic pressure 0.5*rho*V^2 [Pa]
@@ -30,8 +27,6 @@ function L = flight_loads(flight, p)
 %     heatFluxMax [W/m^2], heatLoad [J/m^2], heatIdxMax
 
 t = flight.t; X = flight.X; T = flight.T; th = flight.theta;
-win = t <= flight.ev.tIgnite | isnan(flight.ev.tIgnite);
-t = t(win); X = X(win,:); T = T(win); th = th(win);
 
 n = numel(t);
 q = zeros(n,1); nAx = q; heatIdx = q; mach = q; rho = q;

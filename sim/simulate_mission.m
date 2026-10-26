@@ -8,7 +8,7 @@ function flight = simulate_mission(p, opts)
 %   This is the single entry point for "fly the mission": run_and_plot and
 %   the Monte Carlo case both call it. It computes the pre-flight guidance
 %   with mission_setup(p), then runs the model through a
-%   Simulink.SimulationInput that supplies p, bb, ld as variables and
+%   Simulink.SimulationInput that supplies p and bb as variables and
 %   disables the model's InitFcn -- which would otherwise rebuild them from
 %   vehicleParams() and silently discard the parameters passed in.
 %
@@ -17,7 +17,10 @@ function flight = simulate_mission(p, opts)
 %     T, theta    - thrust command [N], thrust angle [rad]
 %     mCutoff, entrySized - entry-burn cutoff mass and "sized" flag, as the
 %                   model's MATLAB Function block computed them in flight
-%     bb, ld, p   - the guidance plans and parameters actually flown
+%     landingPlanTimes - times at which the in-flight landing guidance
+%                   produced a (new) plan: first = ignition, then re-plans
+%     touchdown   - state at ground contact (last logged sample)
+%     bb, p       - boostback plan and parameters actually flown
 %     ev          - event times: tCutoff (boostback), tEntry ([start end],
 %                   [] if none), tIgnite (landing-burn ignition)
 %     ignition    - state at landing-burn ignition altitude (interpolated
@@ -35,13 +38,12 @@ if ~bdIsLoaded(mdl)
     load_system(fullfile(projRoot, 'simulink', [mdl '.slx']));
 end
 
-[bb, ld] = mission_setup(p);
+bb = mission_setup(p);
 
 in = Simulink.SimulationInput(mdl);
 in = in.setModelParameter('InitFcn', '');   % p, bb, ld come from here instead
 in = in.setVariable('p', p);
 in = in.setVariable('bb', bb);
-in = in.setVariable('ld', ld);
 
 % The COESA block warns once per run that it extrapolates above 84.85 km;
 % expected, since its altitude input is clamped at p.atmo.maxAltitude.
@@ -56,7 +58,7 @@ end
 
 log = out.get('simlog');
 t = log.time;
-D = log.signals.values;   % columns: x y vx vy m T_cmd theta_cmd mCutoff entrySized
+D = log.signals.values;   % columns: x y vx vy m T_cmd theta_cmd mCutoff entrySized landingPlanTime landingActive
 
 flight.t = t;
 flight.X = D(:, 1:5);
@@ -64,7 +66,10 @@ flight.T = D(:, 6);
 flight.theta = D(:, 7);
 flight.mCutoff = D(end, 8);
 flight.entrySized = D(end, 9) > 0.5;
-flight.bb = bb; flight.ld = ld; flight.p = p;
+active = D(:, 11) > 0.5;
+flight.landingPlanTimes = unique(D(active, 10));
+flight.touchdown = D(end, 1:5)';
+flight.bb = bb; flight.p = p;
 flight.simTime = simTime;
 
 % Events

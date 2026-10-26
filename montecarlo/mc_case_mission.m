@@ -31,6 +31,11 @@ function m = mc_case_mission(p)
 %     propAtIgnition  propellant left above dry mass at ignition [kg]
 %     landingMargin   propAtIgnition minus the ideal (impulsive) landing-burn
 %                     propellant for ignitionSpeed [kg]
+%   Landing (in-flight SCvx guidance, re-planned):
+%     touchdownSpeed  speed at ground contact [m/s]; touchdownVx, touchdownVy
+%     touchdownMissX  downrange miss at ground contact [m]
+%     propAtTouchdown propellant left above dry mass at touchdown [kg]
+%     nLandingPlans   plans made in flight (1 at ignition + re-plans)
 %     simTime         wall-clock time of the Simulink run [s]
 
 m = struct('feasible', false, 'burnTime', NaN, 'propBoostback', NaN, ...
@@ -39,7 +44,9 @@ m = struct('feasible', false, 'burnTime', NaN, 'propBoostback', NaN, ...
     'nAxialMax', NaN, 'nAxialBoostback', NaN, 'nAxialDescent', NaN, ...
     'heatPeak', NaN, 'heatFluxMax', NaN, 'heatLoad', NaN, 'apogee', NaN, ...
     'ignitionMissX', NaN, 'ignitionSpeed', NaN, 'propAtIgnition', NaN, ...
-    'landingMargin', NaN, 'simTime', NaN);
+    'landingMargin', NaN, 'touchdownSpeed', NaN, 'touchdownVx', NaN, ...
+    'touchdownVy', NaN, 'touchdownMissX', NaN, 'propAtTouchdown', NaN, ...
+    'nLandingPlans', NaN, 'simTime', NaN);
 
 try
     flight = simulate_mission(p);
@@ -80,5 +87,12 @@ m.ignitionMissX = ign(1) - p.target.x;
 m.ignitionSpeed = norm(ign(3:4));
 m.propAtIgnition = ign(5) - p.dryMass;
 m.landingMargin = m.propAtIgnition - ign(5) * (1 - exp(-m.ignitionSpeed / (p.Isp * p.g0)));
+td = flight.touchdown;
+m.touchdownSpeed = norm(td(3:4));
+m.touchdownVx   = td(3);
+m.touchdownVy   = td(4);
+m.touchdownMissX = td(1) - p.target.x;
+m.propAtTouchdown = td(5) - p.dryMass;
+m.nLandingPlans = numel(flight.landingPlanTimes);
 m.simTime       = flight.simTime;
 end

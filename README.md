@@ -27,8 +27,11 @@ Simulink), the vehicle arrives there within ~1 m. For the nominal return
 to the launch site (separation at 1649 m/s, 30° flight-path angle) that's
 an ~86 s burn using 6.1 t of the 8 t propellant, then a ~256 s coast.
 
-**Phase 3 (next):** convex landing-burn guidance. The landing burn is
-still a placeholder, so touchdown is still hard.
+**Phase 3 (done):** landing burn guided by successive convexification
+(SCvx: drag in the dynamics, free burn time, thrust/tilt/glide-slope
+constraints), re-planned in flight from the measured state inside the
+Simulink model. Nominal return to the launch site: touchdown at 0.83 m/s on
+the pad.
 
 ## Planned phases
 

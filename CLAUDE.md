@@ -19,7 +19,7 @@ roles (Munich area; motivating example: Isar Aerospace's working-student GNC
 postings, which explicitly mention "GNC algorithms for reusability scenarios,
 trajectory optimization, Monte Carlo analysis, MATLAB/Simulink").
 
-## Current state (Phase 2 done; Phase 4 drag + entry burn + drag-aware targeting done; Phase 3 next)
+## Current state (full mission works end to end in Simulink: boostback, coast, entry burn, landing with soft touchdown)
 
 Two parallel implementations of the same Phase 1 physics exist, deliberately:
 
@@ -35,15 +35,13 @@ Two parallel implementations of the same Phase 1 physics exist, deliberately:
   truth for the diagram — re-run it to rebuild, don't hand-edit the `.slx`
   and let the two drift apart).
 
-Both fly the same nominal sequence, and agree at ignition to ~0.3 m:
-**convex boostback** (Phase 2) aimed by **`boostback_targeting`** (aim-point
-bias for drag + entry burn) → coast with **drag** (COESA plant) → **entry
-burn** sized online at 60 km → drag braking → landing-burn ignition at 3 km
-(~60 m from the aimed point: guidance-model error). The landing burn
-(`guidance/pdg_landing_guidance.m`) is still a **placeholder**, so
-touchdown is hard. **Phase 3 (convex landing guidance) is the next task**;
-it now starts from a realistic ~450 m/s, Mach ~1.4 state instead of the
-vacuum 1.8 km/s.
+Both fly the same full mission and agree closely (ignition ~0.3 m,
+touchdown 0.83 vs 0.85 m/s): **convex boostback** (Phase 2) aimed by
+**`boostback_targeting`** → coast with **drag** (COESA plant) → **entry
+burn** sized online at 60 km → drag braking → **landing burn: SCvx
+guidance re-planned in flight** (Phase 3) → **soft touchdown on the pad**
+(nominal RTLS: 0.83 m/s, x ≈ 0 m, 435 kg left). Results are saved as flight
+records and plotted from files (see "Results files and plotting").
 
 The project is a git repository (initialized at the Phase 1 baseline).
 
@@ -261,7 +259,7 @@ point — both acceptable first-order approximations for now.
 
 ## Later phases — key points to remember when we get there
 
-### Phase 3: Landing burn guidance (in progress — SCvx guidance works in MATLAB; not yet in Simulink)
+### Phase 3: Landing burn guidance (DONE — in Simulink, re-planned in flight, soft touchdown)
 
 `guidance/landing_guidance_scvx.m` (tested: `test_landing_guidance_scvx`).
 Decided with the user: **full SCvx with trust region** (not frozen drag
@@ -305,8 +303,44 @@ last 2.5 s): touchdown **5.4 m/s on the pad**. Open items: warm-start
 re-solves from the shifted previous plan (cold starts ~6 s each), shrink
 the frozen end window / terminal controller, then Simulink integration
 (periodic replanning, e.g. MATLAB Function at a fixed rate) and
-`mission_setup`/MC hookup. The placeholder `pdg_landing_guidance.m` is still
-what the model flies.
+`mission_setup`/MC hookup.
+
+**Completed (2026-10-26):**
+- Closed loop: `sim/fly_landing_closed_loop.m` (MATLAB reference) and the
+  Simulink `LandingGuidance` MATLAB Function block (discrete,
+  `p.landing.loopPeriod` = 0.1 s) both call `guidance/landing_solve.m`
+  (margin + fallback) — via `landing_replan.m` (plain arrays) in Simulink.
+  Plan at ignition (descending through 3 km), re-plan every 1 s,
+  warm-started (previous plan resampled + mass re-referenced), until the
+  last 2.5 s / 30 m. Native blocks fly the plan: lookup tables with data
+  from input ports (**port order: input, TABLE, breakpoints** — verified),
+  indexed by time since the plan, × mass. Placeholder removed.
+- **Root cause of the poor closed-loop landings was the onboard density
+  model**: the single exponential was 10–16 % too dense below 3 km → stage
+  always faster than planned → re-plans needing more than T_max →
+  infeasible (9.5 m/s touchdowns). Replaced everywhere in guidance by an
+  **onboard atmosphere table** (`guidance/guidance_density.m`: COESA every
+  5 km, log-linear; 0.8 % below 5 km, 2.5 % worst). Expect this to also
+  shrink the boostback-targeting miss and the entry burn's q
+  under-prediction — `p.entry.limitMargin = 0.10` may now be
+  over-conservative (not re-checked yet).
+- **Thrust margin** `p.landing.thrustPlanFraction = 0.9` (plan with 90 % of
+  T_max, keep authority for re-plans; fallback to 100 % if a re-plan fails).
+  Sweep with the old density model: 9.5 → 3.9 m/s (0.85); with the table:
+  1.7–1.9 m/s in the MATLAB loop, 0.83 m/s in the full Simulink mission.
+- Bug fixed in the closed loop: the re-plan time kept bounding the step
+  inside the final window (where it isn't advanced) → 1e-6 s steps for
+  seconds (looked like a hang). Now errors on non-advancing steps, has a
+  wall-clock limit and Verbose progress.
+- Simulink gotchas: MATLAB Function output sizes must be declared
+  (`Props.Array.Size`), else lookup tables see size 1; extrinsic calls +
+  persistent state need `ChartUpdate = 'DISCRETE'` with a SampleTime.
+- Re-plans take ~1–3 s of wall time (4–12 SCvx iterations warm-started), so
+  a Simulink mission now takes ~1 min; the MC will be correspondingly
+  slower. Speed-ups not done: cap iterations / looser tolerance for
+  re-plans, fewer nodes late in the burn.
+- MC metrics: touchdownSpeed/Vx/Vy, touchdownMissX, propAtTouchdown,
+  nLandingPlans; flight loads now cover the whole flight incl. landing.
 
 ### Results files and plotting (decoupled)
 

@@ -126,7 +126,7 @@ coastOpts = odeset(opts, 'Events', @(~, s) altEvent(s, p.landingIgniteAltitude))
 [t2, X2] = ode45(@(~, s) guidance_model_eom(s, 0, p), t(end) + [0 1200], X(end,:)', coastOpts);
 t = [t; t2(2:end)]; X = [X; X2(2:end,:)];
 
-rho = p.atmo.rho0 * exp(-max(X(:,2), 0) / p.atmo.H);
+rho = guidance_density(X(:,2), p);
 V = vecnorm(X(:,3:4), 2, 2);
 heat = sqrt(rho) .* V.^3;
 out.qPeak     = max(0.5 * rho .* V.^2);

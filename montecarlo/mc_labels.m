@@ -36,6 +36,12 @@ if isempty(metrics)
         "ignitionMissX",   "Downrange miss at landing-burn ignition",          "m",     1
         "aimBias",         "Boostback aim-point bias",                         "m",     1
         "burnTime",        "Boostback burn duration",                          "s",     1
+        "touchdownSpeed",  "Speed at touchdown",                               "m/s",   1
+        "touchdownVx",     "Horizontal velocity at touchdown",                 "m/s",   1
+        "touchdownVy",     "Vertical velocity at touchdown",                   "m/s",   1
+        "touchdownMissX",  "Downrange miss at touchdown",                      "m",     1
+        "propAtTouchdown", "Propellant left at touchdown",                     "kg",    1
+        "nLandingPlans",   "Landing plans made in flight",                     "",      1
         "simTime",         "Simulink run time",                                "s",     1
         };
     metrics = cell2struct(rows, {'name', 'desc', 'unit', 'scale'}, 2);

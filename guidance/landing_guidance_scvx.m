@@ -4,6 +4,9 @@ function ld = landing_guidance_scvx(state0, p, opts)
 %
 %   ld = landing_guidance_scvx(state0, p)
 %   ld = landing_guidance_scvx(state0, p, N=31, MaxIter=30, Verbose=true)
+%   ld = landing_guidance_scvx(state0, p, WarmStart=ws)
+%        ws = struct('X', prev.Xs, 'U', prev.Us, 's', prev.s, 'm0', prev.m0,
+%                    'elapsed', seconds since prev was computed)
 %
 %   state0 - [x; y; vx; vy; m] at landing-burn ignition
 %
@@ -50,6 +53,8 @@ arguments
     opts.Verbose (1,1) logical = false
     opts.Lambda (1,1) double = 1e3
     opts.SolverDisplay (1,1) string = "off"
+    opts.WarmStart = []                % previous ld (with elapsed time), see below
+    opts.ThrustFraction (1,1) double = 1   % plan with this fraction of T_max
 end
 
 N = opts.N;
@@ -62,7 +67,11 @@ m0 = state0(5);
 sc.m0 = m0;
 alpha = sc.A * sc.T / (p.Isp * p.g0);           % dz/dt~ = -alpha*sigma~
 rho1 = p.T_min / (m0 * sc.A);                   % thrust bounds as accel at m0
-rho2 = p.T_max / (m0 * sc.A);
+% Upper thrust bound for PLANNING: a fraction of the engine's maximum. A
+% fuel-optimal plan rides its upper bound at the end of the burn; planning
+% below the real maximum keeps throttle authority in reserve for the
+% re-plans to absorb model errors (see fly_landing_closed_loop).
+rho2 = opts.ThrustFraction * p.T_max / (m0 * sc.A);
 zDry = log(p.dryMass / m0);
 cosTilt = cos(p.maxTiltAngle);
 cotGS = cot(p.glideSlopeAngle);
@@ -94,6 +103,33 @@ for k = 1:K
     Fk = model(xbar(:,k), [0; 0; 0]);                          % gravity + drag
     ubar(:,k) = projectControl(aNeeded - Fk(3:4), xbar(5,k), rho1, rho2, p.maxTiltAngle);
     xbar(5,k+1) = max(xbar(5,k) - alpha * ubar(3,k) * dtau * sbar, zDry);
+end
+
+% ---- Warm start (re-planning): previous plan, shifted forward in time ----
+% The previous plan (scaled X, U, s, its own m0) is resampled onto the new
+% normalized-time grid over the remaining duration, and its mass profile
+% re-referenced to the new initial mass (z = ln(m/m0) is relative to the
+% mass at the start of each solve). The first node is replaced by the
+% measured state; SCvx's virtual control absorbs the jump. Typically
+% converges in 1-3 iterations instead of ~5 from the cold guess above.
+ws = opts.WarmStart;
+if ~isempty(ws)
+    e = ws.elapsed / sc.T;                      % scaled time since that plan started
+    sNew = ws.s - e;
+    if sNew > 0.1 * ws.s
+        tauOld = linspace(0, 1, N);
+        tauMap = (e + tau * sNew) / ws.s;       % where each new node sits in the old plan
+        Xw = interp1(tauOld', ws.X', min(tauMap, 1)')';
+        Xw(5,:) = Xw(5,:) + log(ws.m0 / m0);    % re-reference mass to the new m0
+        Xw(:,1) = x0;
+        Uw = zeros(3, K);
+        for k = 1:K
+            tauMid = (e + (tau(k) + dtau/2) * sNew) / ws.s;
+            kOld = min(floor(tauMid * K) + 1, K);
+            Uw(:,k) = projectControl(ws.U(1:2,kOld), Xw(5,k), rho1, rho2, p.maxTiltAngle);
+        end
+        xbar = Xw; ubar = Uw; sbar = sNew;
+    end
 end
 
 % ---- SCvx parameters ----
@@ -171,6 +207,8 @@ ld.converged = converged;
 ld.iterations = size(hist, 1);
 ld.maxDefect = maxDefect(xbar, ubar, sbar, model, dtau);
 ld.relaxationGap = max((ubar(3,:) - vecnorm(ubar(1:2,:))) ./ ubar(3,:));
+% Internal (scaled) solution, for warm-starting the next re-plan
+ld.Xs = xbar; ld.Us = ubar; ld.s = sbar; ld.m0 = m0;
 ld.history = array2table(hist, 'VariableNames', ...
     {'iter', 'J', 'maxDefect', 'maxVirtualControl', 'trustRadius', 'rho'});
 
@@ -289,7 +327,7 @@ function F = dynamicsF(x, u, p, sc, alpha)
 vPhys = x(3:4) * sc.V;
 V = norm(vPhys);
 m = sc.m0 * exp(x(5));
-rho = p.atmo.rho0 * exp(-max(x(2) * sc.L, 0) / p.atmo.H);
+rho = guidance_density(x(2) * sc.L, p);
 CD = interp1(p.aero.mach, p.aero.CD, min(V / p.atmo.soundSpeed, p.aero.mach(end)));
 aDrag = -(0.5 * rho * V * CD * p.aero.A_ref / m) * vPhys;
 F = [x(3:4); u(1:2) + [0; -1] + aDrag / sc.A; -alpha * u(3)];

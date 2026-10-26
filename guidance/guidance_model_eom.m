@@ -1,7 +1,7 @@
 function ds = guidance_model_eom(s, T, p)
 %GUIDANCE_MODEL_EOM The guidance's own (onboard) descent model: point
-%   mass, retrograde thrust T [N], gravity, and drag with an exponential
-%   atmosphere (p.atmo.rho0, p.atmo.H), a constant speed of sound
+%   mass, retrograde thrust T [N], gravity, and drag with the onboard
+%   atmosphere table (guidance_density), a constant speed of sound
 %   (p.atmo.soundSpeed) for Mach, and the CD(Mach) table.
 %
 %   Deliberately simpler than the plant (threeDOF_EOM + COESA): it's what
@@ -14,7 +14,7 @@ function ds = guidance_model_eom(s, T, p)
 v = s(3:4); V = norm(v); m = s(5);
 aDrag = [0; 0];
 if p.aero.dragEnabled
-    rho = p.atmo.rho0 * exp(-max(s(2), 0) / p.atmo.H);
+    rho = guidance_density(s(2), p);
     CD = interp1(p.aero.mach, p.aero.CD, min(V / p.atmo.soundSpeed, p.aero.mach(end)));
     aDrag = -(0.5 * rho * V * CD * p.aero.A_ref / m) * v;
 end

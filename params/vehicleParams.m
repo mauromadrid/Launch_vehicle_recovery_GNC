@@ -80,11 +80,15 @@ p.aero.CD   = [0.80 0.82 0.90 1.20 1.45 1.50 1.45 1.35 1.30 1.28];
 % linearly (negative at ~175 km), so the altitude fed to it is clamped at
 % maxAltitude, where density (~3e-14 kg/m^3) already makes drag zero.
 p.atmo.maxAltitude = 150e3;      % [m]
-% Guidance model: exponential rho = rho0*exp(-h/H), least-squares fit to
-% COESA over 0-80 km (density within +-23%). Deliberately simpler than the
-% plant, as real onboard models are; used by the drag bias estimator.
-p.atmo.rho0 = 1.4168;            % [kg/m^3]
-p.atmo.H    = 7008;              % [m] scale height
+% Guidance model (onboard atmosphere table, see guidance_density): COESA
+% density sampled every 5 km, interpolated log-linearly. Within 0.8% of
+% the plant below 5 km, 2.5% overall -- close, but deliberately not the
+% plant's own model. (v1: one exponential fit over 0-80 km, 10-16% too
+% dense near the ground -- it broke the closed-loop landing.)
+p.atmo.tableAltitude = 0:5e3:80e3;                                     % [m]
+p.atmo.tableLogRho   = [0.20294 -0.306368 -0.885019 -1.64158 -2.43002 ...
+    -3.23232 -4.01672 -4.80193 -5.55942 -6.2758 -6.93049 -7.5301 ...
+    -8.15144 -8.80927 -9.50817 -10.2642 -11.0618];                     % ln(rho [kg/m^3])
 p.atmo.soundSpeed = 300;         % [m/s] guidance model's constant speed of
                                  %       sound (Mach for CD); COESA ranges
                                  %       ~275-340 m/s below 86 km
@@ -109,6 +113,19 @@ p.entry.limitMargin   = 0.10;    % [-]   size the burn to limit/(1+margin) on
                                  %       the absolute limits (q, ignition
                                  %       speed): the guidance atmosphere
                                  %       under-predicts peak q by ~3-8%
+
+% --- Landing burn guidance (Phase 3: SCvx, re-planned in flight) ---
+p.landing.N                 = 31;   % nodes (30 ZOH intervals) per plan
+p.landing.replanPeriod      = 1.0;  % [s] re-solve from the measured state
+p.landing.freezeTime        = 2.5;  % [s] stop re-planning when less than
+                                    %     this much of the plan remains
+p.landing.minReplanAltitude = 30;   % [m] ...or below this altitude
+p.landing.thrustPlanFraction = 0.90; % plan with this fraction of T_max:
+                                    %     reserve authority for re-plans (falls
+                                    %     back to 100% if a re-plan fails)
+p.landing.loopPeriod        = 0.1;  % [s] execution period of the in-flight guidance
+                                    %     block in Simulink (it solves only at
+                                    %     ignition and at re-plan times)
 
 % --- Load limits for DISPLAY ONLY (plots; not used by any guidance) ---
 p.loads.heatFluxMax = 150e3;     % [W/m^2] illustrative stagnation heat-flux

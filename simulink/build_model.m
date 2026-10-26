@@ -28,15 +28,13 @@
 %                                  and a Stop-Simulation block that
 %                                  halts the run at ground contact
 %
-% NOTE: the landing burn is still a fixed, non-optimized placeholder
-% (guidance/pdg_landing_guidance.m, Phase 3) -- expect a hard "landing"
-% until then. The boostback is the real convex solve (Phase 2).
+% Landing burn: SCvx guidance re-planned in flight by the LandingGuidance
+% MATLAB Function block (see the GuidancePhaseLogic section).
 
 projRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(genpath(projRoot));
 p  = vehicleParams();
 bb = boostback_targeting([], p);
-ld = pdg_landing_guidance([], p);
 
 simDir = fullfile(projRoot, 'simulink');
 if ~exist(simDir, 'dir'); mkdir(simDir); end
@@ -197,13 +195,13 @@ set_param([guidPath '/Out1'], 'Name', 'T_cmd');
 add_block('simulink/Sinks/Out1', [guidPath '/theta_cmd'], 'Port', '2');
 add_block('simulink/Sinks/Out1', [guidPath '/mCutoff_out'], 'Port', '3');   % logged
 add_block('simulink/Sinks/Out1', [guidPath '/entrySized_out'], 'Port', '4');
+add_block('simulink/Sinks/Out1', [guidPath '/landingPlanTime_out'], 'Port', '5');   % logged
+add_block('simulink/Sinks/Out1', [guidPath '/landingActive_out'], 'Port', '6');
 
 add_block('simulink/Sources/Clock', [guidPath '/Clock']);
 add_block('simulink/Logic and Bit Operations/Relational Operator', [guidPath '/IsBoostback'], 'Operator', '<');
 add_block('simulink/Sources/Constant', [guidPath '/BoostbackDur'], 'Value', 'bb.duration');
 
-add_block('simulink/Logic and Bit Operations/Relational Operator', [guidPath '/IsBelowIgnite'], 'Operator', '<=');
-add_block('simulink/Sources/Constant', [guidPath '/IgniteAlt'], 'Value', 'p.landingIgniteAltitude');
 
 % Boostback: piecewise-constant (ZOH) profile from the convex solve.
 % 'Flat' interpolation holds each node's value until the next breakpoint.
@@ -214,8 +212,6 @@ add_block('simulink/Lookup Tables/1-D Lookup Table', [guidPath '/BB_Theta'], ...
     'Table', 'bb.theta', 'BreakpointsForDimension1', 'bb.t', ...
     'InterpMethod', 'Flat', 'ExtrapMethod', 'Clip');
 add_block('simulink/Math Operations/Product', [guidPath '/BB_T']); % T = aCmd * m
-add_block('simulink/Sources/Constant', [guidPath '/LD_T'], 'Value', 'ld.T_const');
-add_block('simulink/Sources/Constant', [guidPath '/LD_Theta'], 'Value', 'ld.theta_const');
 add_block('simulink/Sources/Constant', [guidPath '/ZeroT'], 'Value', '0');
 add_block('simulink/Sources/Constant', [guidPath '/ZeroTheta'], 'Value', '0');
 
@@ -231,8 +227,6 @@ add_line(guidPath, 'BB_aCmd/1', 'BB_T/1');
 add_line(guidPath, 'm_in/1', 'BB_T/2');
 add_line(guidPath, 'BoostbackDur/1', 'IsBoostback/2');
 
-add_line(guidPath, 'y_in/1', 'IsBelowIgnite/1');
-add_line(guidPath, 'IgniteAlt/1', 'IsBelowIgnite/2');
 
 % ---- Entry burn ----
 % Sized once, when descending through p.entry.startAltitude: a Triggered
@@ -312,13 +306,113 @@ add_line(guidPath, 'RetroAngle/1', 'EntrySwitchTheta/1');
 add_line(guidPath, 'EntryActive/1', 'EntrySwitchTheta/2');
 add_line(guidPath, 'ZeroTheta/1', 'EntrySwitchTheta/3');
 
-% Landing burn below ignition altitude, else entry burn (if active) / coast
-add_line(guidPath, 'LD_T/1', 'InnerSwitchT/1');
-add_line(guidPath, 'IsBelowIgnite/1', 'InnerSwitchT/2');
+% ---- Landing burn: SCvx guidance, re-planned in flight ----
+% A MATLAB Function block (every p.landing.loopPeriod s) makes the first
+% plan when the stage descends through p.landingIgniteAltitude, then
+% re-plans every p.landing.replanPeriod s from the measured state
+% (warm-started), until the final p.landing.freezeTime s. It calls the
+% guidance extrinsically (landing_replan -> landing_guidance_scvx) and
+% outputs the current plan as arrays. Native blocks fly it: lookup tables
+% fed through input ports (port order: input, TABLE, breakpoints),
+% indexed by time since the plan was made, give the commanded thrust
+% acceleration and angle; thrust = acceleration x current mass.
+lgPath = [guidPath '/LandingGuidance'];
+add_block('simulink/User-Defined Functions/MATLAB Function', lgPath);
+lgChart = sfroot().find('-isa', 'Stateflow.EMChart', 'Path', lgPath);
+lgChart.Script = strjoin({ ...
+    'function [tNodes, aCmd, theta, tPlan, duration, active] = landing_guidance(state, t, p)'
+    '%LANDING_GUIDANCE In-flight landing guidance: plan at ignition, then'
+    '%   re-plan periodically (warm-started) until the final window. Keeps the'
+    '%   current plan as persistent arrays; the guidance itself runs as MATLAB'
+    '%   code (extrinsic), so this block is simulation-only.'
+    'coder.extrinsic(''landing_replan'');'
+    'N = p.landing.N; K = N - 1;'
+    'persistent planned pX pU pS pM0 pT pA pTh pDur pTPlan pTLast'
+    'if isempty(planned)'
+    '    planned = false; pX = zeros(5, N); pU = zeros(3, K); pS = 0; pM0 = 0;'
+    '    pT = (0:K-1)''; pA = zeros(K, 1); pTh = zeros(K, 1);'
+    '    pDur = 0; pTPlan = 0; pTLast = -1e9;'
+    'end'
+    'doSolve = false; warm = false;'
+    'if ~planned'
+    '    doSolve = state(2) <= p.landingIgniteAltitude && state(4) < 0;'
+    'else'
+    '    remaining = pDur - (t - pTPlan);'
+    '    if remaining > p.landing.freezeTime && state(2) > p.landing.minReplanAltitude ...'
+    '            && (t - pTLast) >= p.landing.replanPeriod - 1e-9'
+    '        doSolve = true; warm = true;'
+    '    end'
+    'end'
+    'if doSolve'
+    '    Xs = zeros(5, N); Us = zeros(3, K); s = 0; m0 = 0;'
+    '    tn = zeros(K, 1); a = zeros(K, 1); th = zeros(K, 1); dur = 0; ok = false;'
+    '    [Xs, Us, s, m0, tn, a, th, dur, ok] = landing_replan(state, p, warm, pX, pU, pS, pM0, t - pTPlan);'
+    '    pTLast = t;'
+    '    if ok'
+    '        planned = true; pX = Xs; pU = Us; pS = s; pM0 = m0;'
+    '        pT = tn; pA = a; pTh = th; pDur = dur; pTPlan = t;'
+    '    end'
+    'end'
+    'tNodes = pT; aCmd = pA; theta = pTh; tPlan = pTPlan; duration = pDur;'
+    'active = double(planned);'
+    }, newline);
+lgData = lgChart.find('-isa', 'Stateflow.Data', 'Name', 'p');
+lgData.Scope = 'Parameter';
+lgData.Tunable = false;
+% Declare output sizes explicitly: Simulink can't infer them through the
+% persistent/extrinsic code, and the lookup tables they feed need >= 2
+% entries at compile time.
+for nm = {'tNodes', 'aCmd', 'theta'}
+    d = lgChart.find('-isa', 'Stateflow.Data', 'Name', nm{1});
+    d.Props.Array.Size = '[p.landing.N-1 1]';
+end
+for nm = {'tPlan', 'duration', 'active'}
+    d = lgChart.find('-isa', 'Stateflow.Data', 'Name', nm{1});
+    d.Props.Array.Size = '1';
+end
+% Discrete: coder.extrinsic and persistent state aren't allowed at a
+% continuous rate, and the sample time only applies with DISCRETE update.
+lgChart.ChartUpdate = 'DISCRETE';
+lgChart.SampleTime = 'p.landing.loopPeriod';
+
+add_block('simulink/Math Operations/Sum', [guidPath '/TimeSincePlan'], 'Inputs', '+-');
+add_block('simulink/Lookup Tables/1-D Lookup Table', [guidPath '/LD_aCmd'], ...
+    'TableSource', 'Input port', 'BreakpointsForDimension1Source', 'Input port', ...
+    'InterpMethod', 'Flat', 'ExtrapMethod', 'Clip');
+add_block('simulink/Lookup Tables/1-D Lookup Table', [guidPath '/LD_Theta'], ...
+    'TableSource', 'Input port', 'BreakpointsForDimension1Source', 'Input port', ...
+    'InterpMethod', 'Flat', 'ExtrapMethod', 'Clip');
+add_block('simulink/Math Operations/Product', [guidPath '/LD_T']);   % T = aCmd * m
+add_block('simulink/Logic and Bit Operations/Relational Operator', [guidPath '/WithinPlan'], 'Operator', '<');
+add_block('simulink/Signal Routing/Switch', [guidPath '/LD_EngineOn'], 'Criteria', 'u2 >= Threshold', 'Threshold', '0.5');
+
+add_line(guidPath, 'StateMux/1', 'LandingGuidance/1');
+add_line(guidPath, 'Clock/1', 'LandingGuidance/2');
+add_line(guidPath, 'Clock/1', 'TimeSincePlan/1');
+add_line(guidPath, 'LandingGuidance/4', 'TimeSincePlan/2');
+add_line(guidPath, 'TimeSincePlan/1', 'LD_aCmd/1');
+add_line(guidPath, 'LandingGuidance/2', 'LD_aCmd/2');      % table: aCmd
+add_line(guidPath, 'LandingGuidance/1', 'LD_aCmd/3');      % breakpoints: node times
+add_line(guidPath, 'TimeSincePlan/1', 'LD_Theta/1');
+add_line(guidPath, 'LandingGuidance/3', 'LD_Theta/2');     % table: theta
+add_line(guidPath, 'LandingGuidance/1', 'LD_Theta/3');
+add_line(guidPath, 'LD_aCmd/1', 'LD_T/1');
+add_line(guidPath, 'm_in/1', 'LD_T/2');
+add_line(guidPath, 'TimeSincePlan/1', 'WithinPlan/1');
+add_line(guidPath, 'LandingGuidance/5', 'WithinPlan/2');   % engine off after the plan
+add_line(guidPath, 'LD_T/1', 'LD_EngineOn/1');
+add_line(guidPath, 'WithinPlan/1', 'LD_EngineOn/2');
+add_line(guidPath, 'ZeroT/1', 'LD_EngineOn/3');
+add_line(guidPath, 'LandingGuidance/4', 'landingPlanTime_out/1');
+add_line(guidPath, 'LandingGuidance/6', 'landingActive_out/1');
+
+% Landing guidance active (planned) -> its command; else entry burn / coast
+add_line(guidPath, 'LD_EngineOn/1', 'InnerSwitchT/1');
+add_line(guidPath, 'LandingGuidance/6', 'InnerSwitchT/2');
 add_line(guidPath, 'EntrySwitchT/1', 'InnerSwitchT/3');
 
 add_line(guidPath, 'LD_Theta/1', 'InnerSwitchTheta/1');
-add_line(guidPath, 'IsBelowIgnite/1', 'InnerSwitchTheta/2');
+add_line(guidPath, 'LandingGuidance/6', 'InnerSwitchTheta/2');
 add_line(guidPath, 'EntrySwitchTheta/1', 'InnerSwitchTheta/3');
 
 add_line(guidPath, 'BB_T/1', 'OuterSwitchT/1');
@@ -343,7 +437,7 @@ add_line(mdl, 'VehicleDynamics/1', 'GuidancePhaseLogic/3'); % x_out    -> x_in
 add_line(mdl, 'VehicleDynamics/3', 'GuidancePhaseLogic/4'); % vx_out   -> vx_in
 add_line(mdl, 'VehicleDynamics/4', 'GuidancePhaseLogic/5'); % vy_out   -> vy_in
 
-add_block('simulink/Signal Routing/Mux', [mdl '/LogMux'], 'Inputs', '9');
+add_block('simulink/Signal Routing/Mux', [mdl '/LogMux'], 'Inputs', '11');
 add_line(mdl, 'VehicleDynamics/1', 'LogMux/1');
 add_line(mdl, 'VehicleDynamics/2', 'LogMux/2');
 add_line(mdl, 'VehicleDynamics/3', 'LogMux/3');
@@ -353,6 +447,8 @@ add_line(mdl, 'GuidancePhaseLogic/1', 'LogMux/6');
 add_line(mdl, 'GuidancePhaseLogic/2', 'LogMux/7');
 add_line(mdl, 'GuidancePhaseLogic/3', 'LogMux/8');   % entry-burn cutoff mass
 add_line(mdl, 'GuidancePhaseLogic/4', 'LogMux/9');   % entry burn sized (0/1)
+add_line(mdl, 'GuidancePhaseLogic/5', 'LogMux/10');  % time of the current landing plan
+add_line(mdl, 'GuidancePhaseLogic/6', 'LogMux/11');  % landing guidance active (0/1)
 
 add_block('simulink/Sinks/To Workspace', [mdl '/LogOut'], 'VariableName', 'simlog', 'SaveFormat', 'Structure With Time');
 add_line(mdl, 'LogMux/1', 'LogOut/1');
@@ -390,7 +486,7 @@ set_param(mdl, 'Solver', 'ode45', 'RelTol', '1e-9', 'AbsTol', '1e-9', ...
 initFcnStr = ['projRoot = fileparts(fileparts(get_param(bdroot,''FileName''))); ' ...
               'addpath(genpath(projRoot)); ' ...
               'p = vehicleParams(); ' ...
-              '[bb, ld] = mission_setup(p);'];
+              'bb = mission_setup(p);'];
 set_param(mdl, 'InitFcn', initFcnStr);
 
 Simulink.BlockDiagram.arrangeSystem(mdl);
