@@ -1,6 +1,6 @@
 function S = study_flight_loads(p, opts)
 %STUDY_FLIGHT_LOADS Flight loads along one mission (Simulink model), with
-%   and without the entry burn, from separation to landing-burn ignition.
+%   and without the entry burn, from separation to touchdown.
 %
 %   S = study_flight_loads()            % nominal vehicleParams()
 %   S = study_flight_loads(p, Plot=false)
@@ -24,7 +24,7 @@ S.withEntry = flight_loads(fOn, pOn);
 S.noEntry = flight_loads(fOff, pOff);
 S.flightWithEntry = fOn;
 
-fprintf('\n--- Flight loads, separation -> landing-burn ignition (landing site x = %.0f km) ---\n', p.target.x/1e3);
+fprintf('\n--- Flight loads, separation -> touchdown (landing site x = %.0f km) ---\n', p.target.x/1e3);
 fprintf('%-34s %12s %12s\n', '', 'no entry', 'entry burn');
 row = @(name, a, b, fmt) fprintf(['%-34s ' fmt ' ' fmt '\n'], name, a, b);
 row('Max-Q [kPa]',                  S.noEntry.maxQ/1e3,          S.withEntry.maxQ/1e3,          '%12.1f');
@@ -40,10 +40,10 @@ fprintf('(heat flux: Sutton-Graves with assumed effective nose radius %.2f m -- 
 if ~opts.Plot, return; end
 figure('Name', 'Flight loads', 'Position', [100 60 1000 820]);
 tl = tiledlayout(3, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
-title(tl, sprintf('Flight loads from separation to landing-burn ignition (landing site x = %.0f km)', p.target.x/1e3));
+title(tl, sprintf('Flight loads from separation to touchdown (landing site x = %.0f km)', p.target.x/1e3));
 series = {'q', 1e-3, 'Dynamic pressure [kPa]';
           'nAxial', 1, 'Axial (sensed) acceleration [g]';
-          'heatFlux', 1e-3, 'Stagnation heat flux [kW/m^2] (Sutton-Graves est.)'};
+          'heatFlux', 1e-3, 'Heat flux [kW/m^2] (est.)'};
 for i = 1:3
     ax = nexttile(tl);
     plot(ax, S.noEntry.t, S.noEntry.(series{i,1}) * series{i,2}, '--', 'LineWidth', 1.4, ...

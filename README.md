@@ -1,228 +1,164 @@
-# Launch Vehicle Recovery — Booster Boostback & Powered-Descent Guidance
+# Reusable Booster Return — Convex-Optimization Guidance in MATLAB/Simulink
 
-A Simulink/MATLAB simulation of a reusable first-stage booster returning to a
-designated landing site after stage separation: a boostback burn, a
-ballistic coast, and a powered landing burn guided by convex-optimization-
-based powered descent guidance (lossless-convexified SOCP, in the style of
-Açıkmeşe & Ploen's work and the "G-FOLD" family of algorithms).
+A MATLAB/Simulink simulation of a reusable first stage flying back after
+stage separation and landing propulsively: **boostback burn → ballistic
+coast with drag → entry burn → landing burn → touchdown**. Each burn is
+guided by an onboard-style algorithm built on **convex optimization**
+(second-order cone programming), the approach behind the G-FOLD family of
+powered-descent guidance algorithms.
 
-## Motivation
+![Full mission in the Simulink model: trajectory and time histories](docs/images/mission_overview.png)
 
-Built as a portfolio project targeting control/simulation engineering roles
-in the Munich area (GNC-focused roles such as Isar Aerospace's working
-student positions), to demonstrate: 6DOF/3DOF vehicle dynamics modeling,
-convex-optimization-based guidance, Monte Carlo dispersion analysis, and
-eventually a Model-in-the-Loop -> Simulink implementation.
+*Nominal return to the launch site, flown in the Simulink model: trajectory
+coloured by flight phase, thrust with engine limits, inertial load,
+thrust angle, speed, dynamic pressure and heating, each with its limit.*
 
-## Status
+## Results at a glance
 
-**Phase 1 (done):** planar 3DOF point-mass dynamics for the full
-boostback -> coast -> landing sequence.
+Nominal mission (return to the launch site), Simulink model:
 
-**Phase 2 (done):** minimum-fuel boostback guidance as a lossless-
-convexified SOCP solved with `coneprog` (`guidance/boostback_guidance.m`).
-The burn targets a fixed-duration ballistic coast that ends at the
-landing-burn ignition point; flown through the nonlinear EOM (MATLAB and
-Simulink), the vehicle arrives there within ~1 m. For the nominal return
-to the launch site (separation at 1649 m/s, 30° flight-path angle) that's
-an ~86 s burn using 6.1 t of the 8 t propellant, then a ~256 s coast.
+| | |
+|---|---|
+| Separation | 65 km altitude, 45 km downrange, 1649 m/s at 30° |
+| Boostback burn | 85.6 s, 6.1 t propellant; apogee 159 km |
+| Entry burn (60 km) | 10.4 s, 0.75 t — cuts max-Q from 229 to **139 kPa** (limit 150) |
+| Peak loads | 6.6 g axial (9.3 g without the entry burn); ~115 kW/m² stagnation heat flux (est.) |
+| Landing burn | ignites at 3 km and 344 m/s; re-planned every second |
+| **Touchdown** | **0.83 m/s, on the pad**, 435 kg of propellant left |
 
-**Phase 3 (done):** landing burn guided by successive convexification
-(SCvx: drag in the dynamics, free burn time, thrust/tilt/glide-slope
-constraints), re-planned in flight from the measured state inside the
-Simulink model. Nominal return to the launch site: touchdown at 0.83 m/s on
-the pad.
+## How it works
 
-## Planned phases
-
-1. **3DOF dynamics** — point-mass planar dynamics, no
-   aerodynamics, validated with placeholder guidance.
-2. **Convex boostback guidance** — minimum-fuel burn solved as a
-   second-order cone program (SOCP) via `coneprog`.
-3. **Convex powered-descent guidance (landing)** — full lossless-
-   convexification formulation (thrust bounds, pointing constraint,
-   glide-slope constraint) via `coneprog`.
-4. **Atmosphere & aerodynamics** — add drag (and optionally lift /
-   grid-fin control) for the descent phase.
-5. **Monte Carlo dispersion analysis** — randomize separation state,
-   wind, and mass properties; report landing-accuracy statistics.
-6. **Stretch goals** — receding-horizon re-solving (closed-loop
-   replanning), a navigation filter (EKF) on noisy sensor data, and a
-   Simulink implementation wrapping the validated MATLAB algorithms
-   (Model-in-the-Loop), with code generation via Simulink Coder.
-
-## Folder structure
-
-```
-params/     vehicle & environment parameters (vehicleParams.m)
-dynamics/   equations of motion and ODE event functions (MATLAB prototype)
-guidance/   guidance algorithms (convex boostback; landing placeholder)
-sim/        top-level MATLAB script that runs the .m-only simulation
-simulink/   the Simulink model, built from native blocks, plus the
-            script that (re)generates it and a results-plotting script
-tests/      MATLAB unit tests (matlab.unittest framework)
-results/    generated plots/data (not version-controlled)
-```
-
-## Two parallel implementations (by design)
-
-This project deliberately keeps both a plain-MATLAB prototype
-(`dynamics/`, `sim/run_open_loop_demo.m`) and a Simulink block-diagram
-implementation (`simulink/`) of the same Phase 1 physics:
-
-- The MATLAB version was used first to validate the equations of
-  motion quickly (unit-testable, fast to iterate).
-- The Simulink version (`simulink/booster_return_3dof.slx`) is the
-  actual deliverable — a genuine block diagram built from native
-  Simulink blocks (Integrator, Product, Trigonometric Function, Sum,
-  Switch, etc.), not a single MATLAB Function block hiding the
-  equations. It has two subsystems:
-  - **VehicleDynamics** — the planar 3DOF point-mass equations of
-    motion as a wired block diagram, mirroring `threeDOF_EOM.m`.
-  - **GuidancePhaseLogic** — boostback / coast / landing phase
-    sequencing using Switch blocks driven by elapsed time and
-    altitude (a Stateflow chart is a natural, higher-value upgrade
-    here — planned as a follow-up).
-  - The top level logs all signals to the workspace and includes a
-    Stop-Simulation block that halts the run at ground contact.
-
-`simulink/build_model.m` is the source of truth for the diagram (it
-programmatically constructs the `.slx` from scratch) — re-run it
-whenever the model's structure needs to change, rather than hand-editing
-the `.slx` and letting the two drift apart.
-
-## Running the main simulation (Simulink)
-
-```matlab
-flight = simulate_mission(p);   % run the Simulink model for parameter set p
-run simulink/run_and_plot.m     % the same, for vehicleParams(), plus plots
-```
-
-`simulate_mission` is the single entry point for flying the mission: it
-computes the pre-flight guidance (`mission_setup`: boostback targeting,
-landing profile) for `p` and runs the model with those values. The Monte
-Carlo calls it for every sample. The model can also be run from its Run
-button, in which case its InitFcn uses `vehicleParams()`.
-
-Rebuild the model from scratch with `build_model` after structural changes.
-
-## Running the MATLAB prototype (cross-check)
-
-```matlab
-cd sim
-run_open_loop_demo
-```
-
-The plain-MATLAB implementation of the same mission, kept as an
-independent cross-check of the Simulink model (they agree at landing-burn
-ignition to ~0.3 m). Both fly the targeted convex boostback, the drag
-coast with the entry burn, and the placeholder landing burn — so neither
-lands softly yet (Phase 3).
-
-## Results files and plots
-
-Running and plotting are decoupled. A run saves the flight as a
-self-describing **flight record** in `results/flights/<name>_<timestamp>.mat`
-(signals table with units, limits, events, flight phase, parameters, the
-git commit of the code); plotting reads only those files.
-
-```matlab
-run simulink/run_and_plot.m         % run the nominal mission, save, plot
-plot_flight_record()                % plot the most recent record (no simulation)
-plot_flight_record("nominal")       % most recent "nominal*" record
-plot_flight_record(file, Panels=["thrust" "mach" "heatFlux"])
-rec = load_flight_record(file);     % the data itself (rec.signals is a table)
-```
-
-Default figure: trajectory (downrange vs altitude, coloured by phase,
-events marked) plus thrust (with T_min/T_max of the active engine
-configuration), inertial (sensed) acceleration in g, thrust angle, speed,
-dynamic pressure (with the entry-burn limit) and the heating index (with
-its limit, when one is active).
-
-**Adding a variable** (new DoF, control, load): add one entry to
-`sim/flight_signal_defs.m` (name, description, units, how to compute it,
-optional limits). It is then stored in every new record and can be named in
-`Panels`. Records keep their own display info, so old files still plot.
-
-## Choosing the landing site
-
-Set `p.target.x` in `params/vehicleParams.m` (x = 0 is the launch site, so
-0 is a return-to-launch-site landing; a large positive x is a downrange
-droneship). The boostback guidance aims for whatever is set.
-
-## Falcon Heavy sanity check
-
-```matlab
-run sim/validate_falcon_heavy.m   % ~7 min
-```
-
-Runs the boostback guidance with Falcon Heavy side-booster parameters
-(sourced where public, see `params/falconHeavySideBoosterParams.m`) over an
-envelope of BECO states, checking feasibility is monotonic in propellant and
-reporting the minimum boostback propellant and burn duration.
-
-## Drag and entry-burn studies
-
-```matlab
-study_drag_effect(p)    % vacuum-planned boostback flown with / without drag
-study_entry_burn(p)     % entry-burn cost vs q / heating limits and start altitude
-```
-
-The entry burn (`guidance/entry_burn_sizing.m`) is sized online at a fixed
-start altitude: the minimum retrograde Δv whose predicted descent (guidance
-model: exponential atmosphere) meets every active limit (default: peak
-dynamic pressure 150 kPa). In Simulink it's a MATLAB Function block in a
-Triggered Subsystem that fires when descending through the start altitude.
-
-The boostback is aimed by `guidance/boostback_targeting.m`: an aim-point
-bias loop around the convex solve, using the guidance model to predict
-where drag and the entry burn will move the arrival point.
-
-## Monte Carlo / sensitivity studies
-
-```matlab
-run montecarlo/run_mc_mission.m   % ~20-25 min for 200 cases: better via matlab -batch
-```
-
-A phase-agnostic framework in `montecarlo/`:
-
-| Step | Function | Role |
+| Phase | Guidance | Method |
 |---|---|---|
-| Catalog | `mc_dispersion_catalog(p)` | Every variable that *can* be dispersed, with default ranges around `p`'s nominal values |
-| Select | `mc_select(catalog, names)` | Which variables *are* dispersed in this study |
-| Sample | `mc_generate_samples(spec, N, Seed=, Method=)` | N input sets: seeded Latin hypercube (or plain random); uniform or truncated-normal |
-| Apply | `mc_apply_sample(p, row)` | One case's parameter set (handles speed/flight-path angle, re-derives `m0` and thrust bounds) |
-| Run | `mc_run(p, samples, caseFcn)` | One case per sample; errors captured per case; inputs + metrics in one table |
-| Case | `mc_case_mission(p)` | Flies the main simulation (`simulate_mission`, i.e. the Simulink model) and reduces it to metrics |
-| Analyse | `mc_analyze(results, inputs, outputs)` | Summary stats, input-space map, rank-correlation sensitivity heatmap, histograms |
+| Boostback | Minimum-fuel burn that puts the stage on a ballistic arc ending at the landing-burn ignition point | **Lossless-convexified SOCP** (Açıkmeşe & Ploen change of variables), solved with `coneprog`; affine coast constraint keeps it convex; free burn time by 1-D search. Aimed with a **predictor-corrector bias loop** that accounts for drag and the entry burn. |
+| Entry burn | Smallest retrograde burn that keeps peak dynamic pressure (and optionally heating) within limits | **Numerical predictor + root finding**, sized in flight from the measured state at 60 km, with a design margin for model error. |
+| Landing burn | Minimum-fuel landing on the pad at zero velocity, with thrust bounds, 20° tilt limit and glide-slope cone | **Successive convexification (SCvx)**: drag in the dynamics, virtual control, trust region, free burn time via time dilation. **Re-planned in flight** every second from the measured state (warm-started), planning with a 10 % thrust reserve. |
 
-To study other variables, change `vars` in the run script (any name from the
-catalog, or append a catalog row for any other numeric field of `p`).
-Because the case function only calls `simulate_mission`, the Monte Carlo
-always flies the current mission — new features don't need to be added
-here. Results are saved to `results/` (not version-controlled).
+**Guidance model vs. plant.** The guidance predicts with its own simplified
+onboard model (an atmosphere table), while the simulated "truth" uses the
+COESA 1976 standard atmosphere and a Mach-dependent drag coefficient. The
+mismatch is deliberate: it is what makes closed-loop re-planning necessary.
+Flown open-loop, the same landing plan hits the ground at ~98 m/s; with
+in-flight re-planning it touches down below 1 m/s.
 
-## Running the tests
+**Simulink model.** `simulink/booster_return_3dof.slx` is built from
+**native blocks** (integrators, products, lookup tables, the Aerospace
+Blockset COESA atmosphere), so the diagram itself shows the physics. It is
+**generated by a script** (`simulink/build_model.m`) for reproducibility.
+The in-flight guidance runs in MATLAB Function blocks (entry-burn sizing in
+a Triggered Subsystem; landing guidance at 10 Hz), and their plans are flown
+by native blocks as thrust = commanded acceleration × current mass.
+
+**Two implementations.** A plain-MATLAB version of the same mission
+(`sim/run_open_loop_demo.m`) is kept as an independent cross-check: the two
+agree to ~0.3 m at landing-burn ignition and to 0.02 m/s at touchdown.
+
+## Flight loads and Monte Carlo analysis
+
+![Flight loads with and without the entry burn](docs/images/entry_burn_loads.png)
+
+*Dynamic pressure, axial (sensed) acceleration and stagnation heat flux along
+the nominal mission, with and without the entry burn.*
+
+The Monte Carlo framework (`montecarlo/`) disperses chosen parameters
+(seeded Latin-hypercube sampling), flies **every sample through the
+Simulink model**, and analyses feasibility, sensitivities (rank
+correlations) and output distributions. Flight loads — max-Q, axial load
+factor, heating — are recorded for every mission.
+
+![Monte Carlo: feasibility and max-Q over separation speed and flight-path angle](docs/images/mc_feasibility_maxq.png)
+
+*100 launch-site returns with dispersed separation speed (±15 %) and
+flight-path angle (5–45°), coloured by max-Q. Crosses: no feasible
+boostback (too much horizontal speed to reverse with the propellant on
+board). Run of 2026-10-25, before the landing guidance and the onboard
+atmosphere table were integrated; to be re-run.*
+
+## Getting started
+
+**Requirements:** MATLAB with Simulink, Optimization Toolbox (`coneprog`),
+Aerospace Toolbox and Aerospace Blockset. Developed on R2026a.
 
 ```matlab
-runtests('tests')
+run simulink/run_and_plot.m      % fly the nominal mission in Simulink, save it, plot it
+plot_flight_record()             % re-plot the most recent saved flight (no simulation)
+run sim/run_open_loop_demo.m     % the same mission in the plain-MATLAB implementation
+runtests('tests')                % 49 unit tests
 ```
 
-(`test_boostback_guidance` takes ~20 s; the rest are fast.)
+After structural changes to the model, regenerate it with
+`run simulink/build_model.m`.
 
-## Modeling assumptions (Phase 1)
+**Running and plotting are decoupled.** Every run saves a self-describing
+*flight record* to `results/flights/` (signals with units, limits, events,
+flight phase, parameters, code version); plots are drawn only from these
+files. Choose panels with
+`plot_flight_record(file, Panels=["thrust" "mach" "heatFlux"])`. A new
+variable is one entry in `sim/flight_signal_defs.m`.
 
-- Flat-Earth, constant-gravity approximation (`g = g0`). Reasonable for
-  the altitude range involved here; revisit with an inverse-square or
-  WGS84 gravity model if the trajectory range grows significantly.
-- Drag only (no lift, zero angle of attack), in the plant: COESA 1976
-  atmosphere and an **illustrative** CD(Mach) curve for a stage descending
-  engine-first (`dragAcceleration.m`; a native-block `Drag` subsystem with
-  the Aerospace Blockset COESA block in Simulink). `p.aero.dragEnabled =
-  false` gives the vacuum plant. The guidance still plans in vacuum; see
-  `sim/study_drag_effect.m` for what drag does to that plan.
-- All parameters in `vehicleParams.m` are illustrative, order-of-
-  magnitude values for a small reusable first stage — not sourced from
-  any specific real vehicle's performance data. Refine and justify them
-  as the project matures.
+**Main parameters** live in `params/vehicleParams.m`: vehicle, separation
+state, landing site (`p.target.x`: 0 = launch site, large values =
+downrange droneship), guidance settings and limits.
+
+**Monte Carlo:** edit and run `montecarlo/run_mc_mission.m` (for long runs,
+use a separate process: `matlab -batch "run('montecarlo/run_mc_mission.m')"`).
+
+**Studies:** `study_drag_effect`, `study_entry_burn` (cost vs. load limits),
+`study_flight_loads`, and `sim/validate_falcon_heavy.m` (real-scale
+feasibility check with public Falcon Heavy side-booster data).
+
+## Repository structure
+
+```
+params/      vehicle, environment and guidance parameters
+dynamics/    equations of motion, drag model, ODE events (MATLAB plant)
+guidance/    boostback SOCP + targeting, entry-burn sizing, SCvx landing
+             guidance, onboard atmosphere and guidance model
+simulink/    the Simulink model, the script that generates it, run_and_plot
+sim/         mission entry point (simulate_mission), MATLAB implementation,
+             flight records and plotting, studies
+montecarlo/  dispersion catalog, sampling, runner, analysis
+tests/       matlab.unittest tests
+docs/images/ figures used in this README
+results/     generated data (not version-controlled)
+```
+
+## Assumptions and limitations
+
+- **Planar point-mass model** (3 states of motion + mass): no attitude
+  dynamics, flat Earth, constant gravity, no wind. Thrust direction is
+  assumed achievable instantly.
+- **Illustrative vehicle**: a small stage (4 t dry, 8 t propellant at
+  separation, one 200 kN engine, 1.5 m diameter). Parameters and the drag
+  curve are order-of-magnitude values, not a real vehicle's data.
+- Heat flux is a Sutton–Graves estimate with an assumed nose radius: an
+  order-of-magnitude indicator, not a thermal analysis.
+- In-flight guidance runs as MATLAB code inside the Simulink blocks
+  (normal-mode simulation, not code-generation ready); a re-plan takes
+  ~1–3 s of computation, so a full mission takes about a minute to simulate.
+
+## Roadmap
+
+- Re-run the Monte Carlo with the landing guidance; realistic dispersions
+  (mass, thrust, drag, density, wind) and landing-accuracy statistics.
+- Attitude dynamics with a cascaded attitude controller (guidance outputs a
+  thrust direction; an inner loop turns it into a pitching moment).
+- Faster re-plans (iteration caps, fewer nodes late in the burn).
+- Drag inside the boostback optimizer (successive convexification).
+
+## References
+
+- B. Açıkmeşe, S. R. Ploen, "Convex Programming Approach to Powered Descent
+  Guidance for Mars Landing", *J. Guidance, Control, and Dynamics*, 2007.
+- L. Blackmore, B. Açıkmeşe, D. P. Scharf, "Minimum-Landing-Error Powered-
+  Descent Guidance for Mars Landing Using Convex Optimization", *JGCD*, 2010.
+- Y. Mao, M. Szmuk, B. Açıkmeşe, "Successive Convexification of Non-Convex
+  Optimal Control Problems and Its Convergence Properties", *IEEE CDC*, 2016.
+- D. Malyuta et al., "Convex Optimization for Trajectory Generation",
+  *IEEE Control Systems Magazine*, 2022.
+- H. J. Allen, A. J. Eggers, NACA Report 1381, 1958 (ballistic entry).
+- K. Sutton, R. A. Graves, NASA TR R-376, 1971 (stagnation heating).
+
+## Author
+
+Mauro Madrid — portfolio project in guidance, navigation & control.
